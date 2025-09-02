@@ -1,0 +1,79 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# docs/CONVEX_BEST_PRACTICES.md
+
+# Convex Best Practices — Functions, Webhooks, Auth, and Data
+
+This doc explains how to use **Convex** correctly in this project.
+
+## 1) Function types & when to use them
+- **Queries**: read-only, deterministic, realtime-subscribable. **No external I/O**. :contentReference[oaicite:12]{index=12}
+- **Mutations**: writes/transactions. **No external I/O**. :contentReference[oaicite:13]{index=13}
+- **Actions**: call third-party services (Plaid, OpenAI, Expo Push). Can run in **Node** via `"use node"`. Interact with DB **indirectly** by calling queries/mutations. Not auto-retried—handle idempotency and retries. :contentReference[oaicite:14]{index=14}
+- **HTTP Actions**: build webhook/public endpoints (Fetch API `Request`→`Response`). From HTTP Actions, call queries/mutations/actions. Use for **Plaid webhooks**. :contentReference[oaicite:15]{index=15}
+
+## 2) Calling patterns (internal functions)
+- From **actions**: `ctx.runQuery` / `ctx.runMutation` (and `ctx.runAction` if cross-runtime).  
+- From **HTTP actions**: same pattern (`runQuery`, `runMutation`, `runAction`) for orchestration. :contentReference[oaicite:16]{index=16}
+
+## 3) Runtimes
+- Use **default Convex runtime** for simple fetches.
+- Use **Node runtime** (`"use node"`) for Node-only libs (e.g., JWT verification libs, Expo server SDK). :contentReference[oaicite:17]{index=17}
+
+## 4) Data modeling & performance
+- Define indexes for common access patterns (e.g., `transactions` by `itemId`, `postedAt`).
+- Prefer **withIndex** over large in-memory filters; follow Convex **Best Practices** guide. :contentReference[oaicite:18]{index=18}
+- Validate args with `convex/values` and perform **auth checks** at function boundaries.
+
+## 5) Auth (Clerk) + Convex
+- Client auth uses **Clerk Expo SDK**; Convex server verifies session/JWT before reads/writes. :contentReference[oaicite:19]{index=19}
+- Store user rows in Convex either via client mutation using `ctx.auth` info **or** by wiring a **Clerk webhook** to keep user data in sync. :contentReference[oaicite:20]{index=20}
+
+## 6) Plaid integration in Convex
+**Actions (server-only secrets)**
+- `create_link_token` → Plaid `/link/token/create`
+- `exchange_public_token` → `/item/public_token/exchange` (persist `access_token`, item+account metadata)
+- `transactions_sync` → `/transactions/sync` with `cursor` (store/advance cursor)
+
+**HTTP Action**: `/webhooks/plaid`
+- Verify webhook authenticity.
+- On `SYNC_UPDATES_AVAILABLE`: call `transactions_sync`, upsert `added`, apply `modified`, delete `removed`. 
+- Webhooks are triggered **only after** you’ve called `/transactions/sync` at least once for an Item. :contentReference[oaicite:21]{index=21}
+
+## 7) Notifications
+- Keep a `devices` table (user ↔ ExpoPushToken).
+- After syncing transactions, enqueue notifications via an **Action** that calls the **Expo Push API**. :contentReference[oaicite:22]{index=22}
+
+## 8) Errors, retries, and idempotency
+- **Queries/Mutations**: transactional guarantees; Convex can auto-retry as needed.
+- **Actions/HTTP Actions**: **not** auto-retried—build idempotent handlers; store webhook event IDs to avoid double-processing; implement exponential backoff/retry where appropriate. :contentReference[oaicite:23]{index=23}
+
+## 9) Examples (sketches)
+
+```ts
+// convex/plaid.ts
+import { action, internalAction } from "./_generated/server";
+import { v } from "convex/values";
+
+// Create link token (client calls this to start Link)
+export const create_link_token = action({
+  args: { userId: v.string(), androidPackage: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    // fetch Plaid /link/token/create with server creds...
+    // return { link_token }
+  },
+});
+
+// Exchange public_token for access_token (server only)
+export const exchange_public_token = internalAction({
+  args: { public_token: v.string(), userId: v.string() },
+  handler: async (ctx, { public_token, userId }) => {
+    // call /item/public_token/exchange
+    // persist access_token & item info under userId
+  },
+});
+
+(Use Node runtime where needed; split public/internal functions thoughtfully.) 

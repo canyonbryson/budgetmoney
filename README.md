@@ -1,5 +1,22 @@
 # Daily Reps 👋
+## Environment Variables
 
+Create a `.env` in the project root by copying `.env.example` and filling in values:
+
+```
+EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+EXPO_PUBLIC_CONVEX_URL=https://<your-deployment>.convex.cloud
+
+# Convex server auth config (used by convex/auth.config.ts)
+CLERK_ISSUER_URL=https://<your-subdomain>.clerk.accounts.dev
+CLERK_JWT_TEMPLATE=convex
+```
+
+Then run the app with:
+
+```
+npm run start
+```
 Daily Reps is a day-to-day workout tracker that allows users to track the combined number of reps that one performs on a given day, resetting the logged reps for the following day.
 
 This repository is the sample covered in the [**Build a daily workout tracker with Clerk, Convex, and Expo**](https://expo.dev/blog/build-a-daily-workout-tracker-with-clerk-convex-and-expo) on the Expo blog.

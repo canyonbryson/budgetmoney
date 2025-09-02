@@ -8,7 +8,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { ThemedView } from '@/components/ThemedView'
 import { ThemedText } from '@/components/ThemedText'
 import OAuthButton from '@/components/OAuthButton'
-import { TextInput } from 'react-native-gesture-handler'
+import { TextInput } from 'react-native'
 
 export default function SignUpScreen() {
   const { isLoaded, signUp, setActive } = useSignUp()

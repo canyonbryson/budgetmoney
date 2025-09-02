@@ -12,13 +12,13 @@
 - [ ] CI: lint, typecheck, tests; EAS build smoke
 
 ## B. App skeleton (Expo + NativeWind)
-- [ ] Expo Router navigation (tabs: Home, Transactions, Budgets, Insights, Ask-AI, Settings)
+- [ ] Expo Router navigation (tabs: Home, Transactions, Budgets, Insights, Ask-AI, Settings) - For now, just do home, ask-ai, and settings. Home includes user information and management (clerk things), ask ai allows you to chat with ai (nothing is saved), and settings allows you to change theme and language.
 - [ ] NativeWind set up; light/dark themes; color tokens
-- [ ] i18n: en + es; language switcher
+- [ ] i18n: en + es + zh-cn; language switcher
 
 ## C. Auth & backend
 - [ ] Clerk screens (Sign In/Up, User button)
-- [ ] Convex schema: users, items, accounts, transactions, budgets, rules, profiles, plans, notifications
+- [ ] Convex schema: users, items, accounts, transactions, budgets, rules, profiles, plans, notifications. For now, users, accounts, families (organizations)
 - [ ] Convex auth guard (session required); Clerk JWT template
 
 ## D. Plaid integration

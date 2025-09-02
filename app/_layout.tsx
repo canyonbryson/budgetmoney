@@ -10,9 +10,15 @@ import { ClerkLoaded, ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import * as SecureStore from 'expo-secure-store'
 import { ConvexReactClient } from 'convex/react';
 import { ConvexProviderWithClerk } from "convex/react-clerk";
+import { SettingsProvider, useSettings } from '@/contexts/SettingsContext';
 
 // Create a Convex client
-const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
+const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL;
+if (!convexUrl) {
+  // Fail fast with a clear message if Convex URL is missing
+  throw new Error('Missing Convex URL. Please set EXPO_PUBLIC_CONVEX_URL in your .env');
+}
+const convex = new ConvexReactClient(convexUrl, {
   unsavedChangesWarning: false,
 });
 
@@ -52,8 +58,9 @@ const tokenCache = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function InnerApp() {
   const colorScheme = useColorScheme();
+  const { theme } = useSettings();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
@@ -68,15 +75,21 @@ export default function RootLayout() {
     return null;
   }
 
+  const effectiveTheme = theme === 'system' ? (colorScheme === 'dark' ? DarkTheme : DefaultTheme) : (theme === 'dark' ? DarkTheme : DefaultTheme);
+
   return (
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <ClerkLoaded>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <ThemeProvider value={effectiveTheme}>
             <Stack>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
+              <Stack.Screen name="(screens)/family" options={{
+                title: "Family",
+                contentStyle: { backgroundColor: 'white' }
+              }} />
               <Stack.Screen name="(screens)/new-workout" options={{
                 title: "New workout",
                 contentStyle: {
@@ -109,5 +122,13 @@ export default function RootLayout() {
         </ClerkLoaded>
       </ConvexProviderWithClerk>
     </ClerkProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <SettingsProvider>
+      <InnerApp />
+    </SettingsProvider>
   );
 }

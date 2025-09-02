@@ -1,0 +1,68 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# docs/AI_CODING_GUIDE.md
+
+# AI Coding Guide — LedgerRocker
+
+This guide tells AI assistants **how to think, plan, code, and self-check** in this project.
+
+## 0) Ground rules (read first)
+- Always produce **TypeScript** and prefer **functional components** (React).
+- This is an **Expo app** with **NativeWind** for styling, **Convex** for backend, **Clerk** for auth, **Plaid** for banking, **Expo Notifications** for push, **i18next** for i18n, **Victory Native** for charts.
+- **Never** store Plaid `access_token` or any bank credentials client-side. Server only. Webhooks + `/transactions/sync` drive updates. :contentReference[oaicite:0]{index=0}
+- Use **Expo Router** for navigation and **dev builds / prebuild** for native modules (e.g., Plaid SDK). :contentReference[oaicite:1]{index=1}
+- Push notifications use **expo-notifications** and Expo Push Service. :contentReference[oaicite:2]{index=2}
+
+## 1) How to approach any task
+1. **Restate the task** in 1–3 bullets (what’s being built/changed).
+2. **Define constraints**: inputs/outputs, data shape, auth rules, performance, error cases.
+3. **Plan**: list the files to touch, new types, functions, screens, and tests.
+4. **Implement in small slices**:
+   - Prefer **diff-style** edits or single-file outputs if asked.
+   - Keep functions small; co-locate domain logic with the feature.
+5. **Self-review checklist**:
+   - Types: no `any`, strict types exported from `packages/shared`.
+   - Security: no secrets in client; validate inputs server-side.
+   - i18n: no hard-coded strings—use `t('key')`.
+   - Accessibility: semantic roles where applicable, pressable areas sized appropriately.
+   - Performance: avoid unnecessary re-renders; memoize heavy lists/charts.
+   - Mobile polish: safe areas, keyboard handling, large tap targets.
+6. **Explain** what changed (bullets) and why. Provide a **test plan**.
+
+## 2) Styling & UI (NativeWind)
+- Use Tailwind-style classes via **NativeWind** only (no inline style objects unless necessary).
+- Respect light/dark by using system color tokens/utilities, not hard-coded hexes.
+- Do not introduce additional UI frameworks.
+
+> NativeWind install & Metro preset notes are in the project guide; follow the official steps when editing config. :contentReference[oaicite:3]{index=3}
+
+## 3) Navigation (Expo Router)
+- Add screens via file-based routes under `apps/native/app/`.
+- Use `Link` and `router.push()`; keep route params typed. :contentReference[oaicite:4]{index=4}
+
+## 4) Data & backend access (Convex)
+- Client calls **queries** (read) and **mutations** (write) directly.
+- **No network calls** inside queries/mutations; put external I/O in **actions**.
+- **HTTP Actions** are only for webhook/public endpoints (e.g., Plaid). They may call queries/mutations/actions. :contentReference[oaicite:5]{index=5}
+- Actions can run in **Node runtime** (use `"use node"` when you need Node libs). :contentReference[oaicite:6]{index=6}
+- For long/side-effecting flows (OpenAI, push, Plaid), build **actions** that call internal queries/mutations. Actions are **not auto-retried**, so add idempotency/retries. :contentReference[oaicite:7]{index=7}
+
+## 5) Banking (Plaid)
+- Client: launch **Plaid Link (RN SDK)** with a server-created `link_token`. On success, send `public_token` to server. :contentReference[oaicite:8]{index=8}
+- Server: exchange `public_token` → **store** `access_token` (server only). Call `/transactions/sync` **once** after first link to activate `SYNC_UPDATES_AVAILABLE` webhooks, then use the webhook to fetch deltas. :contentReference[oaicite:9]{index=9}
+
+## 6) Notifications (Expo)
+- Client: register with `expo-notifications`, persist device token in Convex.
+- Server: send pushes via **Expo Push API** from an Action. :contentReference[oaicite:10]{index=10}
+
+## 7) i18n & charts
+- Use `i18next` with `expo-localization`. No plain strings in UI; add keys. 
+- Charts use **victory-native** (`react-native-svg` under the hood). :contentReference[oaicite:11]{index=11}
+
+## 8) Commit & PR etiquette
+- Use **Conventional Commits**; small, reviewable PRs; update CHANGELOG if needed.
+- Include a **Test Plan** and screenshots/GIFs for UI changes.
+

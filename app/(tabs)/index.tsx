@@ -1,25 +1,25 @@
-import { ActivityIndicator, Image, StyleSheet } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
 import { ThemedView } from '@/components/ThemedView';
 import React from 'react';
-import ListItem from '@/components/ListItem';
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Button from "@/components/Button";
-import { router } from 'expo-router';
+import { useUser, useAuth } from '@clerk/clerk-expo';
+import { ThemedText } from '@/components/ThemedText';
+import { t } from '@/i18n';
+import { useSettings } from '@/contexts/SettingsContext';
 
 export default function HomeScreen() {
-  const start = new Date()
-  start.setHours(0,0,0,0)
-  const end = new Date()
-  end.setHours(23, 59, 59, 999)
+  const { language } = useSettings();
+  const { user } = useUser();
+  const { signOut } = useAuth();
 
-  const workouts = useQuery(api.workouts.listWithReps, {
-    start: start.getTime(),
-    end: end.getTime()
-  });
+  const onSignOutPress = async () => {
+    try {
+      await signOut({ redirectUrl: "/" });
+    } catch {}
+  };
 
   return (
     <ParallaxScrollView
@@ -30,22 +30,17 @@ export default function HomeScreen() {
           style={styles.reactLogo}
         />
       }>
-
       <ThemedView style={styles.stepContainer}>
-        {!workouts ? <ActivityIndicator size="large" /> : (
-          <>
-          <Button onPress={() => router.push("/new-workout")}>
-            <Ionicons size={16} name="add-outline" /> New workout
+        <ThemedText type="title">{t(language, 'welcome')}</ThemedText>
+        <View style={{ gap: 8 }}>
+          <ThemedText>
+            {t(language, 'signedInAs')}: {user?.emailAddresses?.[0]?.emailAddress}
+          </ThemedText>
+          <Button onPress={onSignOutPress}>
+            {t(language, 'signOut')}
           </Button>
-          {workouts.map(({ _id, name, currentReps, targetReps }) => (
-            <ListItem key={_id} onPress={() => router.push(`/log-reps/${_id}`)}>
-              { name } ({currentReps ?? 0}/{targetReps})
-            </ListItem>
-          ))}
-          </>
-        )}
+        </View>
       </ThemedView>
-
     </ParallaxScrollView>
   );
 }

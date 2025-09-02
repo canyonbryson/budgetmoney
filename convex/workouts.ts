@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
 
 export const list = query({
   args: {},
@@ -44,7 +43,7 @@ export const insert = mutation({
 
 export const getWorkout = query({
   args: {
-    id: v.string()
+    id: v.id("workouts")
   },
   handler: async (ctx, args) => {
     const auth = await ctx.auth.getUserIdentity()
@@ -135,7 +134,7 @@ export const listWithRepsForHistory = query({
 
 export const update = mutation({
   args: {
-    id: v.string(),
+    id: v.id("workouts"),
     name: v.string(),
     targetReps: v.number()
   },
@@ -154,7 +153,7 @@ export const update = mutation({
       throw new Error("Not authorized")
     }
 
-    await ctx.db.patch(args.id as Id, {
+    await ctx.db.patch(args.id, {
       name: args.name,
       targetReps: args.targetReps
     })
@@ -163,7 +162,7 @@ export const update = mutation({
 
 export const setIsDeleted = mutation({
   args: {
-    id: v.string(),
+    id: v.id("workouts"),
     isDeleted: v.boolean()
   },
   handler: async (ctx, args) => {
@@ -180,7 +179,7 @@ export const setIsDeleted = mutation({
       throw new Error("Not authorized");
     }
 
-    await ctx.db.patch(args.id as Id, {
+    await ctx.db.patch(args.id, {
       isDeleted: args.isDeleted
     })
   }

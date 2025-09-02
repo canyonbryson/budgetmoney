@@ -1,5 +1,3 @@
-/* prettier-ignore-start */
-
 /* eslint-disable */
 /**
  * Generated `api` utility.
@@ -15,6 +13,8 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as ask_ai from "../ask_ai.js";
+import type * as families from "../families.js";
 import type * as logged_reps from "../logged_reps.js";
 import type * as workouts from "../workouts.js";
 
@@ -27,6 +27,8 @@ import type * as workouts from "../workouts.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  ask_ai: typeof ask_ai;
+  families: typeof families;
   logged_reps: typeof logged_reps;
   workouts: typeof workouts;
 }>;
@@ -38,5 +40,3 @@ export declare const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">
 >;
-
-/* prettier-ignore-end */

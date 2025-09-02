@@ -29,7 +29,8 @@ export default function OAuthButton({ strategy, children }: Props) {
   const onPress = React.useCallback(async () => {
     try {
       const { createdSessionId, setActive } = await startOAuthFlow({
-        redirectUrl: Linking.createURL("/dashboard", { scheme: "myapp" }),
+        // Redirect back to the root of the app after OAuth
+        redirectUrl: Linking.createURL("/", { scheme: "myapp" }),
       });
 
       if (createdSessionId && setActive) {

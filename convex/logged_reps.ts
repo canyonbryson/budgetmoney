@@ -1,10 +1,9 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
 
 export const logReps = mutation({
   args: {
-    workoutId: v.string(),
+    workoutId: v.id("workouts"),
     reps: v.number(),
   },
   handler: async (ctx, args) => {
@@ -32,7 +31,7 @@ export const logReps = mutation({
 
 export const getEntry = query({
   args: {
-    entryId: v.string(),
+    entryId: v.id("logged_reps"),
   },
   handler: async (ctx, args) => {
     const auth = await ctx.auth.getUserIdentity()
@@ -40,14 +39,14 @@ export const getEntry = query({
       throw new Error("Not authorized")
     }
 
-    const entry = await ctx.db.get(args.entryId as Id)
+    const entry = await ctx.db.get(args.entryId)
     if(!entry) {
       throw new Error("Not found")
     }
 
     const wo = await ctx.db.query("workouts")
       .filter(q => q.and(
-        q.eq(q.field("_id"), entry.workoutId as Id),
+        q.eq(q.field("_id"), entry.workoutId),
         q.eq(q.field("userId"), auth.subject)
       )).first()
     if(!wo) {
@@ -60,7 +59,7 @@ export const getEntry = query({
 
 export const update = mutation({
   args: {
-    entryId: v.string(),
+    entryId: v.id("logged_reps"),
     reps: v.number()
   },
   handler: async (ctx, args) => {
@@ -69,21 +68,21 @@ export const update = mutation({
       throw new Error("Not authorized")
     }
 
-    const entry = await ctx.db.get(args.entryId as Id)
+    const entry = await ctx.db.get(args.entryId)
     if(!entry) {
       throw new Error("Not found")
     }
 
     const wo = await ctx.db.query("workouts")
       .filter(q => q.and(
-        q.eq(q.field("_id"), entry.workoutId as Id),
+        q.eq(q.field("_id"), entry.workoutId),
         q.eq(q.field("userId"), auth.subject)
       )).first()
     if(!wo) {
       throw new Error("Not authorized");
     }
 
-    await ctx.db.patch(args.entryId as Id, {
+    await ctx.db.patch(args.entryId, {
       reps: args.reps
     })
   }
@@ -91,7 +90,7 @@ export const update = mutation({
 
 export const remove = mutation({
   args: {
-    entryId: v.string()
+    entryId: v.id("logged_reps")
   },
   handler: async (ctx, args) => {
     const auth = await ctx.auth.getUserIdentity()
@@ -99,20 +98,20 @@ export const remove = mutation({
         throw new Error("Not authorized")
     }
 
-    const entry = await ctx.db.get(args.entryId as Id)
+    const entry = await ctx.db.get(args.entryId)
     if(!entry) {
       throw new Error("Not found")
     }
 
     const wo = await ctx.db.query("workouts")
       .filter(q => q.and(
-        q.eq(q.field("_id"), entry.workoutId as Id),
+        q.eq(q.field("_id"), entry.workoutId),
         q.eq(q.field("userId"), auth.subject)
       )).first()
     if(!wo) {
       throw new Error("Not authorized");
     }
 
-    await ctx.db.delete(args.entryId as Id)
+    await ctx.db.delete(args.entryId)
   }
 })
