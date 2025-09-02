@@ -19,3 +19,77 @@ To learn how to build Daily Reps yourself, a detailed explaination of each compo
 If you need any support building this project, feel free to contact the author directly on X:
 
 - [Brian Morrison II (@brianmmdev)](https://x.com/brianmmdev)
+
+# README.md
+
+# LedgerRocker — Expo + NativeWind + Convex + Clerk + Plaid
+
+**LedgerRocker** is an open-source personal finance app that helps you:
+- Link accounts via **Plaid**, auto-sync & categorize transactions
+- Create **budgets** with envelope-style controls and alerts
+- See **beautiful charts** and **forecasts** of your spending & cash-flow
+- Ask an **AI copilot** questions about your finances
+- Keep data safe with secure storage and least-privilege design
+
+## Tech stack
+
+- **App**: React Native via **Expo** (Expo Router)
+- **Styling**: **NativeWind** (Tailwind for React Native) + system light/dark
+- **Auth**: **Clerk** (Expo SDK)
+- **Backend & DB**: **Convex** (realtime DB, server functions, HTTP Actions)
+- **Plaid**: React Native Link SDK + **Transactions Sync** + **webhooks**
+- **Push**: **Expo Notifications**
+- **Charts**: `victory-native` + `react-native-svg`
+- **i18n**: `i18next` + `react-i18next` + `expo-localization`
+- **Secure storage**: `expo-secure-store` (Keychain/Keystore)
+
+## Features
+
+- **Plaid Link**: link_token flow, exchange public_token → store access_token (server-only)
+- **Background sync**: Plaid webhook → Convex HTTP Action → `/transactions/sync` cursor flow
+- **Budgets**: period, target, categories, rollovers, burn-rate, alerts
+- **Insights**: category breakdowns, trend lines, month-over-month change, simple forecast
+- **Ask-AI**: OpenAI-based copilot using your financial profile & plans (opt-in, revocable)
+- **i18n + theming**: production-ready localization & light/dark with NativeWind
+- **Privacy**: access_token never leaves server; device stores only session & prefs in SecureStore
+
+## Architecture
+
+```
+
+Expo (RN) app
+├─ Clerk (Expo SDK) → user session
+├─ NativeWind (Tailwind classes)
+├─ i18next + expo-localization
+├─ Expo Notifications (device push token)
+├─ Plaid Link (RN SDK) → link\_token from Convex → public\_token
+│     ↳ Convex Action exchange\_public\_token → store Plaid access\_token
+└─ Convex client (queries/mutations) ← realtime data
+├─ HTTP Action: /webhooks/plaid  (SYNC\_UPDATES\_AVAILABLE → /transactions/sync)
+├─ Actions: notify device via Expo Push
+└─ Tables: users, items, accounts, transactions, budgets, rules, profiles, plans, notifications
+
+```
+
+## Security & privacy
+
+- **Server-only**: Plaid access tokens & cursors live in Convex env (never on device).
+- **Webhook verify**: verify Plaid webhook signatures before processing.
+- **Device**: use SecureStore for tokens/prefs; no plaintext secrets in AsyncStorage.
+- **Data minimization**: store only what you render; redact logs.
+
+## Open source
+
+- License: **MIT**
+- **CODE_OF_CONDUCT.md**: Contributor Covenant v2.1
+- **CONTRIBUTING.md**: Conventional Commits; PR checklist; issue/PR templates
+- **CHANGELOG.md**: Keep a Changelog + SemVer
+- **SECURITY.md** + Dependabot config
+- CI: typecheck, lint, tests; basic EAS build checks
+
+## Roadmap
+
+- Smart category rules & auto-learn overrides
+- CSV/OFX export & import
+- Advanced forecasts (seasonality, income irregularity)
+- Optional E2E encryption for selected local notes/fields
