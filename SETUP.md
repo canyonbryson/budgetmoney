@@ -1,6 +1,5 @@
 # SETUP.md
 
-# LedgerRocker — Setup (Expo + NativeWind + Convex + Clerk + Plaid)
 
 ## 0) Prereqs
 - Node 18+, pnpm/yarn, Git

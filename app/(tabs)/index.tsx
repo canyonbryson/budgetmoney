@@ -1,12 +1,12 @@
 import { Image, StyleSheet, View } from 'react-native';
 
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedView } from '@/components/ThemedView';
+import Screen from '@/components/ui/Screen';
+import { ThemedView } from '@/components/ui/ThemedView';
 import React from 'react';
 import Ionicons from "@expo/vector-icons/Ionicons";
-import Button from "@/components/Button";
+import Button from "@/components/ui/Button";
 import { useUser, useAuth } from '@clerk/clerk-expo';
-import { ThemedText } from '@/components/ThemedText';
+import { ThemedText } from '@/components/ui/ThemedText';
 import { t } from '@/i18n';
 import { useSettings } from '@/contexts/SettingsContext';
 
@@ -22,18 +22,11 @@ export default function HomeScreen() {
   };
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
+    <Screen>
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="title">{t(language, 'welcome')}</ThemedText>
-        <View style={{ gap: 8 }}>
-          <ThemedText>
+        <ThemedText type="title" style={styles.welcomeTitle}>{t(language, 'welcome')}</ThemedText>
+        <View style={styles.userInfo}>
+          <ThemedText style={styles.signedInText}>
             {t(language, 'signedInAs')}: {user?.emailAddresses?.[0]?.emailAddress}
           </ThemedText>
           <Button onPress={onSignOutPress}>
@@ -41,7 +34,7 @@ export default function HomeScreen() {
           </Button>
         </View>
       </ThemedView>
-    </ParallaxScrollView>
+    </Screen>
   );
 }
 
@@ -52,8 +45,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stepContainer: {
-    gap: 8,
+    gap: 24,
+    paddingTop: 20,
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: '700',
     marginBottom: 8,
+  },
+  userInfo: {
+    gap: 16,
+    padding: 20,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.02)',
+  },
+  signedInText: {
+    fontSize: 16,
+    opacity: 0.8,
   },
   reactLogo: {
     height: 178,

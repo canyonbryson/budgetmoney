@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "dailyreps-article-walkthrough",
-    "slug": "dailyreps-article-walkthrough",
+    "name": "injured",
+    "slug": "injured",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -26,12 +26,6 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-    "plugins": [
-      "expo-router",
-      "expo-font",
-      "expo-secure-store",
-      "expo-web-browser"
-    ],
     "experiments": {
       "typedRoutes": true
     }

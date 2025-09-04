@@ -1,16 +1,17 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import React from 'react';
-import 'react-native-reanimated';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '../$node_modules/@react-navigation/native/lib/typescript/src/index.js';
+import { useFonts } from '../$node_modules/expo-font/build/index.js';
+import { Stack } from '../$node_modules/expo-router/build/index.js';
+import * as SplashScreen from '../$node_modules/expo-splash-screen/build/index.js';
+import React from '../$node_modules/@types/react/index.js';
+import '../$node_modules/react-native-reanimated/lib/typescript/index.js';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { ClerkLoaded, ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import * as SecureStore from 'expo-secure-store'
-import { ConvexReactClient } from 'convex/react';
-import { ConvexProviderWithClerk } from "convex/react-clerk";
+import { ClerkLoaded, ClerkProvider, useAuth } from '../$node_modules/@clerk/clerk-expo/dist/index.js';
+import * as SecureStore from '../$node_modules/expo-secure-store/build/SecureStore.js'
+import { ConvexReactClient } from '../$node_modules/convex/dist/esm-types/react/index.js';
+import { ConvexProviderWithClerk } from "../$node_modules/convex/dist/esm-types/react-clerk/index.js";
 import { SettingsProvider, useSettings } from '@/contexts/SettingsContext';
+import { SafeAreaProvider } from '../$node_modules/react-native-safe-area-context/lib/typescript/src/index.js';
 
 // Create a Convex client
 const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL;
@@ -81,6 +82,8 @@ function InnerApp() {
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <ClerkLoaded>
+          <SafeAreaProvider>
+
           <ThemeProvider value={effectiveTheme}>
             <Stack>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -88,6 +91,10 @@ function InnerApp() {
               <Stack.Screen name="+not-found" />
               <Stack.Screen name="(screens)/family" options={{
                 title: "Family",
+                contentStyle: { backgroundColor: 'white' }
+              }} />
+              <Stack.Screen name="(screens)/profile" options={{
+                title: "Profile",
                 contentStyle: { backgroundColor: 'white' }
               }} />
               <Stack.Screen name="(screens)/new-workout" options={{
@@ -119,6 +126,8 @@ function InnerApp() {
               }} />
             </Stack>
           </ThemeProvider>
+          </SafeAreaProvider>
+
         </ClerkLoaded>
       </ConvexProviderWithClerk>
     </ClerkProvider>

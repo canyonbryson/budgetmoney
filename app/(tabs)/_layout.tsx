@@ -1,36 +1,63 @@
-import { Redirect, Tabs } from 'expo-router';
-import React from 'react';
+import * as React from 'react';
+import { View, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { Tabs } from 'expo-router';
 
-import { TabBarIcon } from '@/components/navigation/TabBarIcon';
 import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-// Import the `useAuth` hook from Clerk
-import { useAuth } from '@clerk/clerk-expo';
-import { useSettings } from '@/contexts/SettingsContext';
-import { t } from '@/i18n';
+import { TabBarIcon } from '@/components/navigation/TabBarIcon';
+import { useThemeColor } from '@/hooks/useThemeColor';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-  const { language } = useSettings();
-    // Redirect if the user is not signed in
-    const { isSignedIn } = useAuth()
-    if(!isSignedIn) {
-      return (
-        <Redirect href={'/sign-in'} />
-      )
-    }
-
+  const activeTabColor = useThemeColor({}, 'tabIconSelected');
+  const inactiveTabColor = useThemeColor({}, 'tabIconDefault');
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+    <Tabs 
+      screenOptions={{ 
         headerShown: false,
-      }}>
+        tabBarStyle: {
+          height: 66,
+          borderRadius: 22,
+          borderWidth: 1,
+          marginHorizontal: 12,
+          marginBottom: 12,
+          position: 'absolute',
+          backgroundColor: 'transparent',
+        },
+        tabBarActiveTintColor: activeTabColor,
+        tabBarInactiveTintColor: inactiveTabColor,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '500',
+        },
+        tabBarBackground: () => (
+          Platform.OS === 'ios' ? (
+            <BlurView
+              tint="light"
+              intensity={60}
+              style={{
+                flex: 1,
+                borderRadius: 22,
+                overflow: 'hidden',
+              }}
+            />
+          ) : (
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: Colors.light.background,
+                borderRadius: 22,
+                overflow: 'hidden',
+              }}
+            />
+          )
+        ),
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: t(language, 'home'),
+          title: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'home' : 'home-outline'} color={color} />
           ),
@@ -39,30 +66,43 @@ export default function TabLayout() {
       <Tabs.Screen
         name="ask-ai"
         options={{
-          title: t(language, 'askAi'),
+          title: 'Ask AI',
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'chatbubble' : 'chatbubble-outline'} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="history"
+        name="injured"
         options={{
-          // Keep route for backwards compat but hide it
-          href: null,
-          title: 'Hidden',
-          tabBarButton: () => null,
+          title: 'Injured',
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name={focused ? 'medkit' : 'medkit-outline'} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="providers"
+        options={{
+          title: 'Providers',
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name={focused ? 'people' : 'people-outline'} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: t(language, 'settings'),
+          title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'cog' : 'cog-outline'} color={color} />
+            <TabBarIcon name={focused ? 'settings' : 'settings-outline'} color={color} />
           ),
         }}
       />
     </Tabs>
   );
 }
+
+
+
+

@@ -2,11 +2,11 @@ import { useSignIn } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
 import { Text, View, ActivityIndicator, TextInput } from 'react-native'
 import React from 'react'
-import Button from '@/components/Button'
-import OAuthButton from '@/components/OAuthButton'
+import Button from '@/components/ui/Button'
+import OAuthButton from '@/components/ui/OAuthButton'
 import MaterialCommunityIcons from '@expo/vector-icons/build/MaterialCommunityIcons'
-import { ThemedText } from '@/components/ThemedText'
-import { ThemedView } from '@/components/ThemedView'
+import { ThemedText } from '@/components/ui/ThemedText'
+import { ThemedView } from '@/components/ui/ThemedView'
 import { styles } from "@/constants/styles"
 import { Ionicons } from '@expo/vector-icons'
 
@@ -53,7 +53,7 @@ export default function SignInScreen() {
         {/* Header text */}
         <ThemedView style={{ marginVertical: 16, alignItems: "center" }}>
           <ThemedText type='title'>
-            Sign into Daily Reps
+            Sign into Injured
           </ThemedText>
           <ThemedText type='default'>
             Welcome back! Please sign in to continue

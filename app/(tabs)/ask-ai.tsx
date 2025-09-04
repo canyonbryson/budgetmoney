@@ -1,21 +1,27 @@
-import React from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, TextInput, View, ActivityIndicator } from 'react-native';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import Button from '@/components/Button';
+import React from 'react'
+import { KeyboardAvoidingView, Platform, StyleSheet, TextInput, View, ActivityIndicator, useColorScheme } from 'react-native';
+import { ThemedText } from '@/components/ui/ThemedText';
+import { ThemedView } from '@/components/ui/ThemedView';
+import Screen from '@/components/ui/Screen';
+import Button from '@/components/ui/Button';
 import { useSettings } from '@/contexts/SettingsContext';
 import { t } from '@/i18n';
 import { useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { themes } from '@injured/ui/theme';
+
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string };
 
 export default function AskAiScreen() {
-  const { language } = useSettings();
+  const { language, theme } = useSettings();
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [input, setInput] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const ask = useAction(api.ask_ai.ask);
+  const system = useColorScheme() ?? 'light';
+  const effective = theme === 'system' ? system : theme;
+  const palette = effective === 'dark' ? themes.dark.colors : themes.light.colors;
 
   const onSend = React.useCallback(async () => {
     if (!input.trim()) return;
@@ -40,11 +46,11 @@ export default function AskAiScreen() {
       style={{ flex: 1 }}
       behavior={Platform.select({ ios: 'padding', android: undefined })}
     >
-      <ThemedView style={styles.container}>
-        <ThemedText type="title">{t(language, 'askAi')}</ThemedText>
+      <Screen>
+        <ThemedText type="title" style={styles.screenTitle}>{t(language, 'askAi')}</ThemedText>
         <View style={styles.inputRow}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderColor: palette.input, color: palette.foreground }]}
             placeholder={t(language, 'promptPlaceholder')}
             value={input}
             onChangeText={setInput}
@@ -58,48 +64,49 @@ export default function AskAiScreen() {
         <View style={styles.messages}>
           {loading && <ActivityIndicator size="small" />}
           {messages.map(m => (
-            <ThemedView key={m.id} style={[styles.message, m.role === 'assistant' ? styles.assistant : styles.user]}>
+            <ThemedView
+              key={m.id}
+              style={[
+                styles.message,
+                { backgroundColor: m.role === 'assistant' ? palette.muted : palette.card, borderColor: palette.border, borderWidth: StyleSheet.hairlineWidth },
+              ]}
+            >
               <ThemedText>{m.content}</ThemedText>
             </ThemedView>
           ))}
         </View>
-      </ThemedView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 12,
-    gap: 12,
+  screenTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 20,
   },
   inputRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
     alignItems: 'center',
+    marginBottom: 16,
   },
   input: {
     flex: 1,
-    height: 40,
+    height: 44,
     borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    borderColor: 'rgba(0,0,0,0.11)'
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 16,
   },
   messages: {
     flex: 1,
-    gap: 8,
+    gap: 12
   },
   message: {
-    padding: 10,
-    borderRadius: 8,
-  },
-  assistant: {
-    backgroundColor: 'rgba(0,0,0,0.06)'
-  },
-  user: {
-    backgroundColor: 'rgba(0,0,0,0.02)'
+    padding: 16,
+    borderRadius: 12
   }
 });
 

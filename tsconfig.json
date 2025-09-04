@@ -5,6 +5,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@injured/backend/*": [
+        "../../packages/backend/*"
+      ],
+      "@injured/ui/*": [
+        "../../packages/shared/ui/*"
       ]
     }
   },
