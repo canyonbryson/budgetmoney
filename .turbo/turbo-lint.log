@@ -1,0 +1,24 @@
+
+
+> @injured/mobile@1.0.0 lint /Users/canyon/Documents/Injured/apps/mobile
+> expo lint
+
+[90menv: load .env.local[39m
+[90menv: export CLERK_ISSUER_URL EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY OPENAI_API_KEY CONVEX_DEPLOYMENT VITE_CONVEX_URL EXPO_PUBLIC_CONVEX_URL VITE_CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY CLERK_SIGN_IN_URL[39m
+
+Oops! Something went wrong! :(
+
+ESLint: 8.57.1
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'eslint-plugin-react-native' imported from /Users/canyon/Documents/Injured/packages/eslint-config/react-native.js
+Did you mean to import "eslint-plugin-react-native/index.js"?
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:255:9)
+    at packageResolve (node:internal/modules/esm/resolve:767:81)
+    at moduleResolve (node:internal/modules/esm/resolve:853:18)
+    at defaultResolve (node:internal/modules/esm/resolve:983:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:799:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:723:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:706:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:307:38)
+    at #link (node:internal/modules/esm/module_job:170:49)
+[41m[30m ELIFECYCLE [39m[49m [31mCommand failed with exit code 2.[39m

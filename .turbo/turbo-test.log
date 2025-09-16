@@ -1,0 +1,65 @@
+
+
+> @injured/mobile@1.0.0 test /Users/canyon/Documents/Injured/apps/mobile
+> jest
+
+[1m[2mDetermining test suites to run...[22m[22m[999D[K
+
+[1mTest Suites: [22m0 of 2 total
+[1mTests:       [22m0 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        0 s, estimated 2 s[K[1A[K[1A[K[1A[K[1A[K[1A[999D[K
+
+[1mTest Suites: [22m0 of 2 total
+[1mTests:       [22m0 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        0 s, estimated 2 s[K[1A[K[1A[K[1A[K[1A[K[1A
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1msmoke.test.ts[22m
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1mcolors.test.ts[22m
+
+[1mTest Suites: [22m0 of 2 total
+[1mTests:       [22m0 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        0 s, estimated 2 s[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1msmoke.test.ts[22m
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1mcolors.test.ts[22m
+
+[1mTest Suites: [22m0 of 2 total
+[1mTests:       [22m0 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        1 s, estimated 2 s[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[0m[7m[1m[32m PASS [39m[22m[27m[0m [2mcomponents/__tests__/[22m[1msmoke.test.ts[22m
+
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1msmoke.test.ts[22m
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1mcolors.test.ts[22m
+
+[1mTest Suites: [22m0 of 2 total
+[1mTests:       [22m0 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        1 s, estimated 2 s[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1msmoke.test.ts[22m
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1mcolors.test.ts[22m
+
+[1mTest Suites: [22m0 of 2 total
+[1mTests:       [22m0 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        1 s, estimated 2 s[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[0m[7m[1m[32m PASS [39m[22m[27m[0m [2mcomponents/__tests__/[22m[1mcolors.test.ts[22m
+
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1msmoke.test.ts[22m
+[0m[7m[33m[1m RUNS [22m[39m[27m[0m [2mcomponents/__tests__/[22m[1mcolors.test.ts[22m
+
+[1mTest Suites: [22m0 of 2 total
+[1mTests:       [22m0 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        1 s, estimated 2 s[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[999D[K[1m[2mRunning coverage on untested files...[22m[22m[999D[K-----------|---------|----------|---------|---------|-------------------
+File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------|---------|----------|---------|---------|-------------------
+[33;1mAll files [0m | [33;1m  66.66[0m | [32;1m     100[0m | [32;1m    100[0m | [33;1m  66.66[0m | [31;1m                 [0m 
+[32;1m Colors.ts[0m | [32;1m    100[0m | [32;1m     100[0m | [32;1m    100[0m | [32;1m    100[0m | [33;1m                 [0m 
+[31;1m styles.ts[0m | [31;1m      0[0m | [32;1m     100[0m | [32;1m    100[0m | [31;1m      0[0m | [31;1m1-3              [0m 
+-----------|---------|----------|---------|---------|-------------------
+
+[1mTest Suites: [22m[1m[32m2 passed[39m[22m, 2 total
+[1mTests:       [22m[1m[32m2 passed[39m[22m, 2 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        2.241 s
+[2mRan all test suites[22m[2m.[22m

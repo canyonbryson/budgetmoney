@@ -1,15 +1,16 @@
-import React from 'react';
-import { View, Text } from 'react-native';
-import { ThemedText } from '@/components/ui/ThemedText';
-import { ThemedView } from '@/components/ui/ThemedView';
-import Screen from '@/components/ui/Screen';
+import React from "react";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import Screen from "@/components/ui/Screen";
+import { useTranslation } from "@injured/i18n";
 
 export default function NewInjuryScreen() {
+  const { t } = useTranslation();
   return (
     <Screen>
-      <ThemedView className="flex-1 p-4">
-        <ThemedText type="title">New Injury</ThemedText>
-        <ThemedText>Create a new injury record.</ThemedText>
+      <ThemedView style={{ flex: 1, padding: 16 }}>
+        <ThemedText variant="heading">{t("newInjury")}</ThemedText>
+        <ThemedText>{t("newInjuryDescription")}</ThemedText>
         {/* TODO: Implement new injury form */}
       </ThemedView>
     </Screen>

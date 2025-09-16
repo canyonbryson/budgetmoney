@@ -1,14 +1,14 @@
 import React from "react";
 import * as WebBrowser from "expo-web-browser";
-import { useOAuth } from "@clerk/clerk-expo";
+import { useSSO } from "@clerk/clerk-expo";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
-import Button from "./Button";
+import { ThemedButton } from "@injured/ui/ThemedButton";
 
 type Props = {
-  strategy: string,
-  children: React.ReactNode
-}
+  strategy: string;
+  children: React.ReactNode;
+};
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -24,13 +24,14 @@ export default function OAuthButton({ strategy, children }: Props) {
     };
   }, []);
 
-  const { startOAuthFlow } = useOAuth({ strategy });
+  const { startSSOFlow } = useSSO();
 
   const onPress = React.useCallback(async () => {
     try {
-      const { createdSessionId, setActive } = await startOAuthFlow({
+      const { createdSessionId, setActive } = await startSSOFlow({
+        strategy: strategy as any,
         // Redirect back to the root of the app after OAuth
-        redirectUrl: Linking.createURL("/", { scheme: "myapp" }),
+        redirectUrl: Linking.createURL("/", { scheme: "injured" }),
       });
 
       if (createdSessionId && setActive) {
@@ -41,9 +42,5 @@ export default function OAuthButton({ strategy, children }: Props) {
     }
   }, []);
 
-  return (
-    <Button onPress={onPress}>
-      { children }
-    </Button>
-  );
+  return <ThemedButton onPress={onPress}>{children}</ThemedButton>;
 }

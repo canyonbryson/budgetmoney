@@ -3,7 +3,7 @@
  * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Nativewind](https://nativewind.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
  */
 
-import { themes } from '@injured/ui/theme';
+import { themes } from "@injured/ui/theme";
 const tintColorLight = themes.light.colors.primary;
 const tintColorDark = themes.dark.colors.primaryForeground;
 

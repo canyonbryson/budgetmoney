@@ -1,23 +1,14 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "@injured/tsconfig/react-native",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "strict": true,
+    "types": ["jest"],
     "paths": {
-      "@/*": [
-        "./*"
-      ],
-      "@injured/backend/*": [
-        "../../packages/backend/*"
-      ],
-      "@injured/ui/*": [
-        "../../packages/shared/ui/*"
-      ]
+      "@/*": ["./*"],
+      "@injured/backend/*": ["../../packages/backend/*"],
+      "@injured/ui/*": ["../../packages/ui/*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
-  ]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }

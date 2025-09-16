@@ -22,9 +22,10 @@ Expo Router (RN) App
 ## Core Packages
 
 ### Primary Dependencies
+
 - **Expo SDK** (`expo@53.0.22`) - React Native framework with native modules
 - **React Native** (`0.79.5`) - Core mobile framework
-- **React** (`19.0.0`) - UI framework
+- **React** (`19.1.0`) - UI framework
 - **Clerk** (`@clerk/clerk-expo@2.14.27`) - Authentication & user management
 - **Convex** (`@injured/backend`) - Real-time backend & database
 - **React Navigation** (`@react-navigation/native@7.1.17`) - Navigation framework
@@ -33,6 +34,7 @@ Expo Router (RN) App
 - **Expo Secure Store** (`expo-secure-store@14.2.4`) - Encrypted local storage
 
 ### UI & Theming
+
 - **Expo Font** (`expo-font@13.3.2`) - Custom font loading
 - **Expo Blur** (`expo-blur@14.1.5`) - Native blur effects
 - **React Native Reanimated** (`~3.17.5`) - Animations
@@ -53,6 +55,7 @@ Expo Router (RN) App
 ## Navigation & Routing
 
 ### Expo Router Structure
+
 ```
 app/                        # Expo Router entrypoint
 ├── _layout.tsx             # Root providers (Clerk, Convex, Theme, i18n)
@@ -88,6 +91,7 @@ app/                        # Expo Router entrypoint
 ```
 
 ### Navigation Patterns
+
 - **File-based Routing** - Routes automatically generated from file structure
 - **Tab Navigation** - Bottom tabs with custom blur background and icons
 - **Stack Navigation** - Modal screens with custom headers
@@ -114,37 +118,41 @@ assets/                     # Fonts, images, icons
 ## Internationalization (i18n)
 
 ### Implementation
+
 - **Custom Translation System** - Type-safe translation keys
 - **Supported Languages**: English, Spanish (es), Chinese Simplified (zh-cn)
 - **Translation Keys** - Enum-based with TypeScript support
 - **Fallback Handling** - Graceful fallback to English for missing translations
 
 ### Usage
+
 ```typescript
-import { t } from '@/i18n';
-import { useSettings } from '@/contexts/SettingsContext';
+import { useTranslation } from "@injured/i18n";
+import { useSettings } from "@/contexts/SettingsContext";
 
 // In component
 const { language } = useSettings();
-const welcomeText = t(language, 'welcome'); // Type-safe key
+const welcomeText = t(language, "welcome"); // Type-safe key
 ```
 
 ### Translation Structure
+
 ```typescript
-type LanguageCode = 'en' | 'es' | 'zh-cn';
+type LanguageCode = "en" | "es" | "zh-cn";
 
 const strings = {
-  en: { home: 'Home', settings: 'Settings' },
-  es: { home: 'Inicio', settings: 'Configuración' },
-  'zh-cn': { home: '首页', settings: '设置' }
+  en: { home: "Home", settings: "Settings" },
+  es: { home: "Inicio", settings: "Configuración" },
+  "zh-cn": { home: "首页", settings: "设置" },
 };
 
-export type TranslationKey = keyof typeof strings['en'];
+export type TranslationKey = keyof (typeof strings)["en"];
 ```
 
 ## Theming & Design System
 
 ### Design Tokens Architecture
+
 ```
 packages/shared/ui/
 ├── theme.ts               # Complete design token system
@@ -155,6 +163,7 @@ packages/shared/ui/
 ```
 
 ### Theme Structure
+
 - **Primitive Tokens** - Raw design values from Figma
 - **Semantic Tokens** - Named tokens for specific use cases
 - **Theme Modes** - Light, dark, and high-contrast variants
@@ -162,6 +171,7 @@ packages/shared/ui/
 - **CSS Variables** - Runtime theme switching
 
 ### Supported Themes
+
 - **Light Theme** - Default daytime appearance
 - **Dark Theme** - Low-light optimized
 - **High Contrast Light** - Accessibility enhanced
@@ -169,23 +179,27 @@ packages/shared/ui/
 - **System Theme** - Follows device preference
 
 ### Color System
+
 ```typescript
 // Semantic color usage
 const colors = {
   modes: {
     light: {
-      background_primary: '#FFFFFF',
-      text_primary: '#000000',
-      action_primary_fill: '#0066CC',
+      background_primary: "#FFFFFF",
+      text_primary: "#000000",
+      action_primary_fill: "#0066CC",
       // ... extensive color palette
     },
-    dark: { /* dark mode colors */ },
+    dark: {
+      /* dark mode colors */
+    },
     // ... high contrast variants
-  }
+  },
 };
 ```
 
 ### Typography Scale
+
 - **Display Fonts** - Headlines, hero text (SF Pro Display)
 - **Text Fonts** - Body copy, UI elements (SF Pro Text)
 - **Mono Fonts** - Code and technical text
@@ -194,15 +208,18 @@ const colors = {
 ## Shared Components
 
 ### UI Component Library
+
 Located in `packages/shared/ui/` with comprehensive design tokens and reusable components.
 
 ### Themed Components
+
 - **ThemedText** - Typography with automatic theme adaptation
 - **ThemedView** - Containers with theme-aware backgrounds
 - **Button** - Consistent button styling across the app
 - **TabBarIcon** - Navigation icons with theme support
 
 ### Component Patterns
+
 ```typescript
 // Themed component example
 export function ThemedText({
@@ -220,6 +237,7 @@ export function ThemedText({
 ```
 
 ### Storybook Integration
+
 - **Component Gallery** - Visual component documentation
 - **Interactive Examples** - Live component testing
 - **Design System Docs** - Token usage and guidelines
@@ -227,9 +245,11 @@ export function ThemedText({
 ## PHI Encryption & Security
 
 ### Encryption Architecture
+
 The app implements **envelope encryption** for PHI (Protected Health Information) using AWS KMS with the following components:
 
 ### Encrypted Data Types
+
 - **Patient Injury Notes** - Medical observations and treatment notes
 - **User Messages** - Chat communications with healthcare providers
 - **AI Messages** - AI assistant conversations
@@ -239,20 +259,22 @@ The app implements **envelope encryption** for PHI (Protected Health Information
 - **Medical Conditions** - Health condition details
 
 ### Encryption Implementation
+
 ```typescript
 // Envelope encryption pattern
 interface EncryptedField {
-  ciphertext: Uint8Array;    // AEAD encrypted data
-  iv: Uint8Array;           // Initialization vector
-  wrappedDek: Uint8Array;   // KMS-wrapped data encryption key
-  keyVersion: number;       // Key version reference
-  aad: Uint8Array;          // Additional authenticated data
-  encAlgo: 'AES_256_GCM' | 'XCHACHA20_POLY1305';
-  sha256?: string;          // Integrity hash
+  ciphertext: Uint8Array; // AEAD encrypted data
+  iv: Uint8Array; // Initialization vector
+  wrappedDek: Uint8Array; // KMS-wrapped data encryption key
+  keyVersion: number; // Key version reference
+  aad: Uint8Array; // Additional authenticated data
+  encAlgo: "AES_256_GCM" | "XCHACHA20_POLY1305";
+  sha256?: string; // Integrity hash
 }
 ```
 
 ### Security Features
+
 - **AES-256-GCM** - Primary encryption algorithm
 - **XChaCha20-Poly1305** - Alternative for specific use cases
 - **Key Rotation** - Automatic key rotation with background re-encryption
@@ -261,6 +283,7 @@ interface EncryptedField {
 - **Audit Logging** - Complete decryption event tracking
 
 ### AAD (Additional Authenticated Data)
+
 ```json
 {
   "table": "patient_injury_notes",
@@ -272,6 +295,7 @@ interface EncryptedField {
 ```
 
 ### Decryption Governance
+
 1. **Request Phase** - Reviewer submits decryption request with justification
 2. **Approval Phase** - Security/privacy approver grants access with expiry
 3. **JIT Access** - Just-in-time decryption using short-lived KMS credentials
@@ -279,12 +303,14 @@ interface EncryptedField {
 5. **Auto-Expiry** - Grants automatically expire; can be revoked early
 
 ### AWS KMS Integration
+
 - **GenerateDataKey** - Creates per-row data encryption keys
 - **Decrypt** - Unwraps DEKs for decryption operations
 - **OIDC → STS** - Short-lived AWS credentials via OIDC federation
 - **Envelope Pattern** - DEKs never stored; only wrapped versions persist
 
 ### Convex Implementation
+
 ```typescript
 // Server-side encryption/decryption functions
 export const encryptField = mutation(async ({ db }, args) => {
@@ -304,6 +330,7 @@ export const decryptField = query(async ({ db, auth }, args) => {
 ## Development
 
 ### Getting Started
+
 ```bash
 # Install dependencies
 pnpm install
@@ -316,6 +343,7 @@ pnpm build
 ```
 
 ### Key Scripts
+
 - `dev` - Start Expo development server
 - `start` - Expo start menu
 - `android/ios/web` - Platform-specific development

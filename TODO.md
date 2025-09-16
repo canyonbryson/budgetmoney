@@ -1,7 +1,7 @@
 # TODO.md
 
-
 ## A. Repo hygiene (open source)
+
 - [ ] MIT `LICENSE`
 - [ ] `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1)
 - [ ] `CONTRIBUTING.md` (Conventional Commits, PR flow)
@@ -11,66 +11,71 @@
 - [ ] CI: lint, typecheck, tests; EAS build smoke
 
 ## B. App skeleton (Expo + NativeWind)
+
 - [ ] Expo Router navigation (tabs: Home, Ask-AI, Settings) - For now, just do home, ask-ai, and settings. Home includes user information and management (clerk things), ask ai allows you to chat with ai (nothing is saved), and settings allows you to change theme and language.
 - [ ] NativeWind set up; light/dark themes; color tokens
 - [ ] i18n: en + es + zh-cn; language switcher
 
 ## C. Auth & backend
+
 - [ ] Clerk screens (Sign In/Up, User button)
 - [ ] Convex schema: users, accounts... For now, users, accounts, families (organizations)
 - [ ] Convex auth guard (session required); Clerk JWT template
 
 ## D. Plaid integration
+
 - [ ] Convex Actions: `create_link_token`, `exchange_public_token`
 - [ ] Link UI: open link, handle success/exit/errors
 - [ ] `transactions_sync` Action with cursor storage
 
 ## E. Webhooks & push
+
 - [ ] HTTP Action `/webhooks/plaid` with signature verification
 - [ ] On SYNC_UPDATES_AVAILABLE → call `/transactions/sync` → upsert
 - [ ] Save device push tokens; send Expo pushes on new transactions
 
 ## F. Budgeting & insights
+
 - [ ] Budget model (period, target, categories, rollover flag)
 - [ ] Assign categories (start from Plaid’s categories; allow overrides & rules)
 - [ ] Charts: spend by category, trend lines, burn-rate donut, forecast
 
 ## G. Ask-AI
+
 - [ ] Convex `askAi` Action (OpenAI Responses API)
 - [ ] Prompt framework (goals, constraints, budget summaries)
 - [ ] Client screen with presets + streaming UI
 
 ## H. Security & privacy
+
 - [ ] Never persist Plaid access_token client-side
 - [ ] SecureStore for session/prefs
 - [ ] Redact logs; rate-limit webhook; tests for signature verify
 
 ## I. Polish & docs
+
 - [ ] App Store/Play build configs
 - [ ] Screenshots/GIFs in README
 - [ ] Upgrade guide (SDK, RN, Plaid SDK)
-
 
 ---
 
 ## References & tips
 
-* **Convex HTTP Actions & functions** — perfect for receiving Plaid webhooks and kicking off sync. ([Convex Developer Hub][7])
-* **Convex + Clerk + Expo template** — start here and keep `apps/native`. ([Convex][1], [GitHub][2])
-* **Clerk Expo docs** — install & wrap your app with Clerk; Convex provider for Clerk. ([Clerk][10], [Convex Developer Hub][11])
-* **Plaid RN SDK** — Link integration steps & version requirements. ([Plaid][6])
-* **Plaid Transactions Sync & webhooks** — call `/transactions/sync` once, then rely on `SYNC_UPDATES_AVAILABLE`. ([Plaid][12])
-* **Plaid Webhook Verification (JWT/JWK)** — verify authenticity of webhook payloads. ([Plaid][8])
-* **Expo Dev Builds & Prebuild** — required for native modules like Plaid RN SDK. ([Expo Documentation][5])
-* **Expo Notifications** — unified push across iOS/Android. ([Expo Documentation][9])
-* **NativeWind with Expo** — install, Tailwind preset, Metro integration. ([nativewind.dev][3])
-* **Victory Native charts** — RN charting with `react-native-svg`. ([commerce.nearform.com][13])
-* **i18n in RN** — `react-i18next` + `i18next`; device locale via Expo Localization. ([react.i18next.com][14])
-* **Secure storage** — use Expo SecureStore (Keychain/Keystore). ([Expo Documentation][15])
-* **OpenAI Responses API** — for the “Ask-AI” copilot. ([OpenAI Platform][16])
-* **Open source hygiene** — Contributor Covenant v2.1, Conventional Commits, Keep a Changelog, Dependabot, issue/PR templates. ([contributor-covenant.org][17], [conventionalcommits.org][18], [keepachangelog.com][19], [GitHub Docs][20])
-
-
+- **Convex HTTP Actions & functions** — perfect for receiving Plaid webhooks and kicking off sync. ([Convex Developer Hub][7])
+- **Convex + Clerk + Expo template** — start here and keep `apps/native`. ([Convex][1], [GitHub][2])
+- **Clerk Expo docs** — install & wrap your app with Clerk; Convex provider for Clerk. ([Clerk][10], [Convex Developer Hub][11])
+- **Plaid RN SDK** — Link integration steps & version requirements. ([Plaid][6])
+- **Plaid Transactions Sync & webhooks** — call `/transactions/sync` once, then rely on `SYNC_UPDATES_AVAILABLE`. ([Plaid][12])
+- **Plaid Webhook Verification (JWT/JWK)** — verify authenticity of webhook payloads. ([Plaid][8])
+- **Expo Dev Builds & Prebuild** — required for native modules like Plaid RN SDK. ([Expo Documentation][5])
+- **Expo Notifications** — unified push across iOS/Android. ([Expo Documentation][9])
+- **NativeWind with Expo** — install, Tailwind preset, Metro integration. ([nativewind.dev][3])
+- **Victory Native charts** — RN charting with `react-native-svg`. ([commerce.nearform.com][13])
+- **i18n in RN** — `react-i18next` + `i18next`; device locale via Expo Localization. ([react.i18next.com][14])
+- **Secure storage** — use Expo SecureStore (Keychain/Keystore). ([Expo Documentation][15])
+- **OpenAI Responses API** — for the “Ask-AI” copilot. ([OpenAI Platform][16])
+- **Open source hygiene** — Contributor Covenant v2.1, Conventional Commits, Keep a Changelog, Dependabot, issue/PR templates. ([contributor-covenant.org][17], [conventionalcommits.org][18], [keepachangelog.com][19], [GitHub Docs][20])
 
 [1]: https://www.convex.dev/templates/monorepo?utm_source=chatgpt.com "Monorepo with Next.js and Expo"
 [2]: https://github.com/get-convex/turbo-expo-nextjs-clerk-convex-monorepo?utm_source=chatgpt.com "get-convex/turbo-expo-nextjs-clerk-convex-monorepo"

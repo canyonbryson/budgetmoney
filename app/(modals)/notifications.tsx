@@ -1,13 +1,14 @@
-import React from 'react';
-import { View, Text } from 'react-native';
-import { ThemedText } from '@/components/ui/ThemedText';
-import { ThemedView } from '@/components/ui/ThemedView';
+import React from "react";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import { useTranslation } from "@injured/i18n";
 
 export default function NotificationsScreen() {
+  const { t } = useTranslation();
   return (
-    <ThemedView className="flex-1 p-4">
-      <ThemedText type="title">Notifications</ThemedText>
-      <ThemedText>Push notification settings and preferences.</ThemedText>
+    <ThemedView style={{ flex: 1, padding: 16 }}>
+      <ThemedText variant="heading">{t("notifications")}</ThemedText>
+      <ThemedText>{t("notificationsDescription")}</ThemedText>
       {/* TODO: Implement notification settings UI */}
     </ThemedView>
   );

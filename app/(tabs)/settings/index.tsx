@@ -1,55 +1,75 @@
-import Ionicons from '../../../$node_modules/@expo/vector-icons/Ionicons.js';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from "react-native";
 
-import Screen from '@/components/ui/Screen.js';
-import { ThemedText } from '@/components/ui/ThemedText.js';
-import { ThemedView } from '@/components/ui/ThemedView.js';
-import React from 'react';
-import { useUser } from '@clerk/clerk-expo';
-import Button from '@/components/ui/Button.js';
-import { useSettings } from '@/contexts/SettingsContext';
-import { t } from '@/i18n';
-import { router } from 'expo-router';
+import Screen from "@/components/ui/Screen";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import React from "react";
+import { useUser } from "@clerk/clerk-expo";
+import { ThemedButton } from "@injured/ui/ThemedButton";
+import { useSettings } from "@/contexts/SettingsContext";
+import { useTranslation } from "@injured/i18n";
+import { router } from "expo-router";
 
 export default function Settings() {
+  const { t } = useTranslation();
   const { user } = useUser();
   const { language } = useSettings();
 
   return (
     <Screen>
-      <ThemedText type="title" style={styles.screenTitle}>{t(language, 'settings')}</ThemedText>
+      <ThemedText variant="heading" style={styles.screenTitle}>
+        {t("settings")}
+      </ThemedText>
 
       <ThemedView style={styles.titleContainer}>
-        <ThemedText type="defaultSemiBold">{t(language, 'signedInAs')} {user?.emailAddresses?.[0]?.emailAddress}</ThemedText>
+        <ThemedText variant="subheading">
+          {t("signedInAs")} {user?.emailAddresses?.[0]?.emailAddress}
+        </ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">{t(language, 'theme')}</ThemedText>
-        <Button onPress={() => router.push('/(tabs)/settings/theme')}>
-          {t(language, 'themeSettings')}
-        </Button>
+        <ThemedText variant="subheading">{t("theme")}</ThemedText>
+        <ThemedButton onPress={() => router.push("/(tabs)/settings/theme")}>
+          {t("themeSettings")}
+        </ThemedButton>
       </ThemedView>
 
       <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">{t(language, 'language')}</ThemedText>
-        <Button onPress={() => router.push('/(tabs)/settings/language')}>
-          {t(language, 'languageSettings')}
-        </Button>
+        <ThemedText variant="subheading">{t("language")}</ThemedText>
+        <ThemedButton onPress={() => router.push("/(tabs)/settings/language")}>
+          {t("languageSettings")}
+        </ThemedButton>
       </ThemedView>
 
       <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">Family</ThemedText>
-        <Button onPress={() => router.push('/(modals)/family')}>Manage family</Button>
+        <ThemedText variant="subheading">{t("family")}</ThemedText>
+        <ThemedButton onPress={() => router.push("/(modals)/family")}>
+          {t("manageFamily")}
+        </ThemedButton>
       </ThemedView>
 
       <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">Profile</ThemedText>
-        <Button onPress={() => router.push('/(modals)/profile')}>Edit profile</Button>
+        <ThemedText variant="subheading">{t("profile")}</ThemedText>
+        <ThemedButton onPress={() => router.push("/(modals)/profile")}>
+          {t("editProfile")}
+        </ThemedButton>
       </ThemedView>
 
       <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">Notifications</ThemedText>
-        <Button onPress={() => router.push('/(modals)/notifications')}>Notification settings</Button>
+        <ThemedText variant="subheading">{t("notifications")}</ThemedText>
+        <ThemedButton onPress={() => router.push("/(modals)/notifications")}>
+          {t("notificationSettings")}
+        </ThemedButton>
+      </ThemedView>
+
+      <ThemedView style={styles.section}>
+        <ThemedText variant="subheading">{t("uiShowcase")}</ThemedText>
+        <ThemedButton onPress={() => router.push("/(tabs)/settings/ui-primitives")}>
+          {t("viewUIPrimitives")}
+        </ThemedButton>
+        <ThemedButton onPress={() => router.push("/(tabs)/settings/ui-components")}>
+          Components Showcase
+        </ThemedButton>
       </ThemedView>
     </Screen>
   );
@@ -58,17 +78,17 @@ export default function Settings() {
 const styles = StyleSheet.create({
   screenTitle: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 20,
   },
   headerImage: {
-    color: '#808080',
+    color: "#808080",
     bottom: -90,
     left: -35,
-    position: 'absolute',
+    position: "absolute",
   },
   titleContainer: {
-    flexDirection: 'column',
+    flexDirection: "column",
     gap: 8,
     marginBottom: 24,
   },
@@ -77,8 +97,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   row: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
-    alignItems: 'center'
-  }
+    alignItems: "center",
+  },
 });

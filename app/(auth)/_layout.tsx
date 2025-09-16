@@ -1,35 +1,36 @@
-import { Redirect } from 'expo-router'
-import { useAuth } from '@clerk/clerk-expo'
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Redirect } from "expo-router";
+import { useAuth } from "@clerk/clerk-expo";
+import { Tabs } from "expo-router";
+import React from "react";
 
-import { TabBarIcon } from '@/components/navigation/TabBarIcon';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { TabBarIcon } from "@/components/navigation/TabBarIcon";
+import { Colors } from "@/constants/Colors";
+import { useColorScheme } from "react-native";
 
 export default function AuthRoutesLayout() {
   const colorScheme = useColorScheme();
-  const { isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth();
 
   if (isSignedIn) {
-    return <Redirect href={'/'} />
+    return <Redirect href={"/"} />;
   }
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false
+        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
+        headerShown: false,
       }}
-      sceneContainerStyle={{
-        backgroundColor: "white"
-      }}>
+    >
       <Tabs.Screen
         name="sign-in"
         options={{
-          title: 'Sign in',
+          title: "Sign in",
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'person' : 'person-outline'} color={color} />
+            <TabBarIcon
+              name={focused ? "person" : "person-outline"}
+              color={color}
+            />
           ),
           headerShown: false,
         }}
@@ -37,13 +38,16 @@ export default function AuthRoutesLayout() {
       <Tabs.Screen
         name="sign-up"
         options={{
-          title: 'Sign up',
+          title: "Sign up",
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'person-add' : 'person-add-outline'} color={color} />
+            <TabBarIcon
+              name={focused ? "person-add" : "person-add-outline"}
+              color={color}
+            />
           ),
-          headerShown: false
+          headerShown: false,
         }}
       />
     </Tabs>
-  )
+  );
 }

@@ -1,0 +1,9 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import Screen from "@/components/ui/Screen";
+import { useTranslation } from "@injured/i18n";
+export default function NewInjuryScreen() {
+    const { t } = useTranslation();
+    return (_jsx(Screen, { children: _jsxs(ThemedView, { style: { flex: 1, padding: 16 }, children: [_jsx(ThemedText, { variant: "heading", children: t("newInjury") }), _jsx(ThemedText, { children: t("newInjuryDescription") })] }) }));
+}

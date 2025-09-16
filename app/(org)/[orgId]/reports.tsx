@@ -1,13 +1,14 @@
-import React from 'react';
-import { View, Text } from 'react-native';
-import { ThemedText } from '@/components/ui/ThemedText';
-import { ThemedView } from '@/components/ui/ThemedView';
+import React from "react";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import { useTranslation } from "@injured/i18n";
 
 export default function OrganizationReports() {
+  const { t } = useTranslation();
   return (
-    <ThemedView className="flex-1 p-4">
-      <ThemedText type="title">Organization Reports</ThemedText>
-      <ThemedText>View and generate reports for this organization.</ThemedText>
+    <ThemedView style={{ flex: 1, padding: 16 }}>
+      <ThemedText variant="heading">{t("organizationReports")}</ThemedText>
+      <ThemedText>{t("organizationReportsDescription")}</ThemedText>
       {/* TODO: Implement organization reports UI */}
     </ThemedView>
   );

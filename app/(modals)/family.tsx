@@ -1,28 +1,29 @@
-import React from '../../$node_modules/@types/react/index.js';
-import { StyleSheet, TextInput, View } from '../../$node_modules/react-native/types/index.js';
-import ParallaxScrollView from '@/components/ui/ParallaxScrollView.js';
-import { ThemedText } from '@/components/ui/ThemedText.js';
-import { ThemedView } from '@/components/ui/ThemedView.js';
-import Button from '@/components/ui/Button.js';
-import { useConvex, useMutation, useQuery } from '../../$node_modules/convex/dist/esm-types/react/index.js';
-import { api } from '@/convex/_generated/api';
+import React from "react";
+import { StyleSheet, TextInput, View } from "react-native";
+import ParallaxScrollView from "@/components/ui/ParallaxScrollView";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import { ThemedButton } from "@injured/ui/ThemedButton";
+import { useConvex, useMutation, useQuery } from "convex/react";
+import { api } from "@injured/backend/convex/_generated/api";
 // Clerk hooks are avoided here to keep types simple; we resolve current user via Convex
-import Ionicons from '../../$node_modules/@expo/vector-icons/Ionicons.js';
-import { useSettings } from '@/contexts/SettingsContext';
-import { t } from '@/i18n';
+import { Ionicons } from "@expo/vector-icons";
+import { useSettings } from "@/contexts/SettingsContext";
+import { useTranslation } from "@injured/i18n";
 
 export default function FamilyScreen() {
+  const { t } = useTranslation();
   const { language } = useSettings();
   const convex = useConvex();
   const userDoc = useQuery(api.auth.users.getCurrentUser, {});
   const orgs = useQuery(
     api.auth.organizations.listUserOrganizations,
-    userDoc?._id ? { userId: userDoc._id } : 'skip',
+    userDoc?._id ? { userId: userDoc._id } : "skip",
   );
   // Pick first org of type FAMILY; if none, allow creating one
-  const familyOrg = (orgs || []).find((o: any) => o?.type === 'FAMILY') || null;
-  const [orgName, setOrgName] = React.useState('');
-  const [inviteEmail, setInviteEmail] = React.useState('');
+  const familyOrg = (orgs || []).find((o: any) => o?.type === "FAMILY") || null;
+  const [orgName, setOrgName] = React.useState("");
+  const [inviteEmail, setInviteEmail] = React.useState("");
 
   const createOrg = useMutation(api.auth.organizations.createOrganization);
   const updateOrg = useMutation(api.auth.organizations.updateOrganization);
@@ -30,7 +31,9 @@ export default function FamilyScreen() {
   const removeMember = useMutation(api.auth.organizations.removeMember);
   const listMembers = useQuery(
     api.auth.organizations.listMembersByOrg,
-    (familyOrg as any)?._id ? { organizationId: (familyOrg as any)._id as any } : 'skip',
+    (familyOrg as any)?._id
+      ? { organizationId: (familyOrg as any)._id as any }
+      : "skip",
   );
 
   React.useEffect(() => {
@@ -42,38 +45,46 @@ export default function FamilyScreen() {
 
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={<Ionicons size={310} name="people" style={styles.headerImage} />}
+      headerBackgroundColor={{ light: "#D0D0D0", dark: "#353636" }}
+      headerImage={
+        <Ionicons size={310} name="people" style={styles.headerImage} />
+      }
     >
       <ThemedView style={styles.container}>
-        <ThemedText type="title">Family</ThemedText>
+        <ThemedText variant="heading">{t("family")}</ThemedText>
         {!familyOrg ? (
           <View style={styles.row}>
             <TextInput
               style={styles.input}
-              placeholder="Family name"
+              placeholder={t("familyNamePlaceholder")}
               value={orgName}
               onChangeText={setOrgName}
             />
-            <Button
+            <ThemedButton
               onPress={async () => {
                 if (!userDoc?._id) return;
                 if (!orgName.trim()) return;
                 await createOrg({
                   actorUserId: userDoc._id,
                   name: orgName.trim(),
-                  slug: orgName.trim().toLowerCase().replace(/\s+/g, '-'),
-                  type: 'FAMILY',
+                  slug: orgName.trim().toLowerCase().replace(/\s+/g, "-"),
+                  type: "FAMILY",
                 });
               }}
-            >Create</Button>
+            >
+              {t("create")}
+            </ThemedButton>
           </View>
         ) : (
           <>
-            <ThemedText type="subtitle">Family name</ThemedText>
+            <ThemedText variant="subheading">{t("familyName")}</ThemedText>
             <View style={styles.row}>
-              <TextInput style={styles.input} value={orgName} onChangeText={setOrgName} />
-              <Button
+              <TextInput
+                style={styles.input}
+                value={orgName}
+                onChangeText={setOrgName}
+              />
+              <ThemedButton
                 onPress={async () => {
                   if (!userDoc?._id || !(familyOrg as any)?._id) return;
                   await updateOrg({
@@ -82,20 +93,24 @@ export default function FamilyScreen() {
                     name: orgName,
                   });
                 }}
-              >Save</Button>
+              >
+                {t("save")}
+              </ThemedButton>
             </View>
           </>
         )}
 
         {familyOrg && (
           <>
-            <ThemedText type="subtitle">Members</ThemedText>
+            <ThemedText variant="subheading">{t("members")}</ThemedText>
             <View style={{ gap: 8 }}>
               {(listMembers ?? []).map((m: any) => (
                 <View key={m._id} style={styles.memberRow}>
-                  <ThemedText>{m.user?.email || m.user?.name || m.clerkUserId} ({m.role})</ThemedText>
+                  <ThemedText>
+                    {m.user?.email || m.user?.name || m.clerkUserId} ({m.role})
+                  </ThemedText>
                   {m.userId !== userDoc?._id && (
-                    <Button
+                    <ThemedButton
                       onPress={async () => {
                         await removeMember({
                           actorUserId: userDoc!._id,
@@ -103,7 +118,9 @@ export default function FamilyScreen() {
                           userId: m.userId,
                         });
                       }}
-                    >Remove</Button>
+                    >
+                      {t("remove")}
+                    </ThemedButton>
                   )}
                 </View>
               ))}
@@ -114,27 +131,32 @@ export default function FamilyScreen() {
         {familyOrg && (
           <View style={styles.row}>
             <TextInput
-              placeholder="Add member by user email (existing user)"
+              placeholder={t("addMemberPlaceholder")}
               style={styles.input}
               value={inviteEmail}
               onChangeText={setInviteEmail}
               autoCapitalize="none"
               keyboardType="email-address"
             />
-            <Button
+            <ThemedButton
               onPress={async () => {
                 if (!inviteEmail.trim() || !userDoc?._id) return;
-                const found = await convex.query(api.auth.users.getUserByEmail, { email: inviteEmail.trim() });
+                const found = await convex.query(
+                  api.auth.users.getUserByEmail,
+                  { email: inviteEmail.trim() },
+                );
                 if (!found?._id) return;
                 await addMember({
                   actorUserId: userDoc._id,
                   organizationId: (familyOrg as any)._id as any,
                   userId: found._id,
-                  role: 'MEMBER',
+                  role: "MEMBER",
                 });
-                setInviteEmail('');
+                setInviteEmail("");
               }}
-            >Add</Button>
+            >
+              {t("add")}
+            </ThemedButton>
           </View>
         )}
       </ThemedView>
@@ -144,19 +166,19 @@ export default function FamilyScreen() {
 
 const styles = StyleSheet.create({
   headerImage: {
-    color: '#808080',
+    color: "#808080",
     bottom: -90,
     left: -35,
-    position: 'absolute',
+    position: "absolute",
   },
   container: {
     gap: 12,
     padding: 12,
   },
   row: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   input: {
     flex: 1,
@@ -164,13 +186,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 10,
-    borderColor: 'rgba(0,0,0,0.11)'
+    borderColor: "rgba(0,0,0,0.11)",
   },
   memberRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  }
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
 });
-
-
