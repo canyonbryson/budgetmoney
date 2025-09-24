@@ -1,14 +1,16 @@
+import { useUser } from "@clerk/clerk-expo";
+import { useTranslation } from "@injured/i18n";
+import { ThemedButton } from "@injured/ui/ThemedButton";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import { router } from "expo-router";
+import React from "react";
+import { useQuery } from "convex/react";
+import { api } from "@injured/backend/convex/_generated/api";
 import { StyleSheet } from "react-native";
 
 import Screen from "@/components/ui/Screen";
-import { ThemedText } from "@injured/ui/ThemedText";
-import { ThemedView } from "@injured/ui/ThemedView";
-import React from "react";
-import { useUser } from "@clerk/clerk-expo";
-import { ThemedButton } from "@injured/ui/ThemedButton";
 import { useSettings } from "@/contexts/SettingsContext";
-import { useTranslation } from "@injured/i18n";
-import { router } from "expo-router";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -64,11 +66,20 @@ export default function Settings() {
 
       <ThemedView style={styles.section}>
         <ThemedText variant="subheading">{t("uiShowcase")}</ThemedText>
-        <ThemedButton onPress={() => router.push("/(tabs)/settings/ui-primitives")}>
+        <ThemedButton
+          onPress={() => router.push("/(tabs)/settings/ui-primitives")}
+        >
           {t("viewUIPrimitives")}
         </ThemedButton>
-        <ThemedButton onPress={() => router.push("/(tabs)/settings/ui-components")}>
+        <ThemedButton
+          onPress={() => router.push("/(tabs)/settings/ui-components")}
+        >
           Components Showcase
+        </ThemedButton>
+        <ThemedButton
+          onPress={() => router.push("/(tabs)/settings/data")}
+        >
+          Data Management
         </ThemedButton>
       </ThemedView>
     </Screen>

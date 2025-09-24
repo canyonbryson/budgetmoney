@@ -1,14 +1,15 @@
 import { useSignIn } from "@clerk/clerk-expo";
-import { Link, useRouter } from "expo-router";
-import { Text, View, ActivityIndicator, TextInput } from "react-native";
-import React from "react";
-import { ThemedButton } from "@injured/ui/ThemedButton";
-import OAuthButton from "@/components/ui/OAuthButton";
+import { Ionicons } from "@expo/vector-icons";
 import MaterialCommunityIcons from "@expo/vector-icons/build/MaterialCommunityIcons";
+import { ThemedButton } from "@injured/ui/ThemedButton";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
+import { Link, useRouter } from "expo-router";
+import React from "react";
+import { Text, View, ActivityIndicator, TextInput } from "react-native";
+
+import OAuthButton from "@/components/ui/OAuthButton";
 import { styles } from "@/constants/styles";
-import { Ionicons } from "@expo/vector-icons";
 
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn();
@@ -33,7 +34,7 @@ export default function SignInScreen() {
           session: signInAttempt.createdSessionId,
         });
 
-        router.replace("/");
+        router.replace("/verify-phone");
       } else {
         console.error(JSON.stringify(signInAttempt, null, 2));
       }

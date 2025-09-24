@@ -1,14 +1,15 @@
+import { useSignUp } from "@clerk/clerk-expo";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { ThemedButton } from "@injured/ui/ThemedButton";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import { Link, useRouter } from "expo-router";
 import React from "react";
 import { View, Text } from "react-native";
-import { useSignUp } from "@clerk/clerk-expo";
-import { Link, useRouter } from "expo-router";
-import { styles } from "@/constants/styles";
-import { ThemedButton } from "@injured/ui/ThemedButton";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { ThemedView } from "@injured/ui/ThemedView";
-import { ThemedText } from "@injured/ui/ThemedText";
-import OAuthButton from "@/components/ui/OAuthButton";
 import { TextInput } from "react-native";
+
+import OAuthButton from "@/components/ui/OAuthButton";
+import { styles } from "@/constants/styles";
 
 export default function SignUpScreen() {
   const { isLoaded, signUp, setActive } = useSignUp();
@@ -52,7 +53,7 @@ export default function SignUpScreen() {
 
       if (completeSignUp.status === "complete") {
         await setActive({ session: completeSignUp.createdSessionId });
-        router.replace("/");
+        router.replace("/verify-phone");
       } else {
         console.error(JSON.stringify(completeSignUp, null, 2));
       }

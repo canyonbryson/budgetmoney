@@ -1,8 +1,9 @@
-import React from "react";
+import { useTranslation } from "@injured/i18n";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
+import React from "react";
+
 import Screen from "@/components/ui/Screen";
-import { useTranslation } from "@injured/i18n";
 
 export default function NewInjuryScreen() {
   const { t } = useTranslation();

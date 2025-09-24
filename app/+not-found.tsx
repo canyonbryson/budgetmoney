@@ -1,10 +1,9 @@
-import React from "react";
-import { Link, Stack } from "expo-router";
 import { useTranslation } from "@injured/i18n";
-import { StyleSheet } from "react-native";
-
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
+import { Link, Stack } from "expo-router";
+import React from "react";
+import { StyleSheet } from "react-native";
 
 export default function NotFoundScreen() {
   const { t } = useTranslation();

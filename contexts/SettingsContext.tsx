@@ -1,6 +1,6 @@
-import React from "react";
-import * as SecureStore from "expo-secure-store";
 import { i18n } from "@injured/i18n";
+import * as SecureStore from "expo-secure-store";
+import React from "react";
 
 type ThemePreference = "system" | "light" | "dark";
 type ContrastPreference = "default" | "high";
@@ -29,10 +29,10 @@ const DEFAULT_SETTINGS: Settings = {
   language: "en",
 };
 
-const THEME_KEY = "settings:theme";
-const CONTRAST_KEY = "settings:contrast";
-const REDUCED_MOTION_KEY = "settings:reducedMotion";
-const LANGUAGE_KEY = "settings:language";
+const THEME_KEY = "settings.theme";
+const CONTRAST_KEY = "settings.contrast";
+const REDUCED_MOTION_KEY = "settings.reducedMotion";
+const LANGUAGE_KEY = "settings.language";
 
 function normalizeToSupportedLang(l?: string): LanguageCode | undefined {
   if (!l) return undefined;
@@ -63,16 +63,26 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [contrast, setContrastState] = React.useState<ContrastPreference>(
     DEFAULT_SETTINGS.contrast,
   );
-  const [reducedMotion, setReducedMotionState] = React.useState<ReducedMotionPreference>(
-    DEFAULT_SETTINGS.reducedMotion,
-  );
+  const [reducedMotion, setReducedMotionState] =
+    React.useState<ReducedMotionPreference>(DEFAULT_SETTINGS.reducedMotion);
   const [isLoaded, setIsLoaded] = React.useState(false);
 
   React.useEffect(() => {
     (async () => {
       try {
-        console.log("Getting stored theme, contrast, reducedMotion and language", THEME_KEY, CONTRAST_KEY, REDUCED_MOTION_KEY, LANGUAGE_KEY);
-        const [storedTheme, storedContrast, storedReducedMotion, storedLanguage] = await Promise.all([
+        console.log(
+          "Getting stored theme, contrast, reducedMotion and language",
+          THEME_KEY,
+          CONTRAST_KEY,
+          REDUCED_MOTION_KEY,
+          LANGUAGE_KEY,
+        );
+        const [
+          storedTheme,
+          storedContrast,
+          storedReducedMotion,
+          storedLanguage,
+        ] = await Promise.all([
           SecureStore.getItemAsync(THEME_KEY),
           SecureStore.getItemAsync(CONTRAST_KEY),
           SecureStore.getItemAsync(REDUCED_MOTION_KEY),
@@ -99,7 +109,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           storedLanguage === "zh-cn"
         ) {
           // Normalize to proper case for consistency
-          setLanguageState(storedLanguage === "zh-cn" ? "zh-CN" : storedLanguage);
+          setLanguageState(
+            storedLanguage === "zh-cn" ? "zh-CN" : storedLanguage,
+          );
         } else {
           // No stored language: derive from current i18n (device tag init)
           const derived = normalizeToSupportedLang(i18n.language);
@@ -139,19 +151,20 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, []);
 
-  const setReducedMotion = React.useCallback(async (next: ReducedMotionPreference) => {
-    setReducedMotionState(next);
-    try {
-      await SecureStore.setItemAsync(REDUCED_MOTION_KEY, String(next));
-    } catch {}
-  }, []);
+  const setReducedMotion = React.useCallback(
+    async (next: ReducedMotionPreference) => {
+      setReducedMotionState(next);
+      try {
+        await SecureStore.setItemAsync(REDUCED_MOTION_KEY, String(next));
+      } catch {}
+    },
+    [],
+  );
 
   // Keep i18next in sync with our stored language
   React.useEffect(() => {
     i18n.changeLanguage(language);
   }, [language]);
-
-  
 
   const value = React.useMemo<SettingsContextValue>(
     () => ({
@@ -165,7 +178,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setLanguage,
       isLoaded,
     }),
-    [theme, contrast, reducedMotion, language, setTheme, setContrast, setReducedMotion, setLanguage, isLoaded],
+    [
+      theme,
+      contrast,
+      reducedMotion,
+      language,
+      setTheme,
+      setContrast,
+      setReducedMotion,
+      setLanguage,
+      isLoaded,
+    ],
   );
 
   return (

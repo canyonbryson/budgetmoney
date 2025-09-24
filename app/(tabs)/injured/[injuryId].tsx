@@ -1,9 +1,10 @@
-import React from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useTranslation } from "@injured/i18n";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
+import { useLocalSearchParams } from "expo-router";
+import React from "react";
+
 import Screen from "@/components/ui/Screen";
-import { useTranslation } from "@injured/i18n";
 
 export default function InjuryDetailScreen() {
   const { injuryId } = useLocalSearchParams();

@@ -1,7 +1,7 @@
 // components/navigation/TabBarIcon.tsx (unchanged, slight tweak: default size 24)
-import React from "react";
 import { Ionicons } from "@expo/vector-icons";
 import type { IconProps } from "@expo/vector-icons/build/createIconSet";
+import React from "react";
 import { type ComponentProps } from "react";
 
 export function TabBarIcon({

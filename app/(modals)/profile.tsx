@@ -1,24 +1,29 @@
-import React from "react";
-import { StyleSheet, TextInput, View } from "react-native";
-import ParallaxScrollView from "@/components/ui/ParallaxScrollView";
-import { ThemedText } from "@injured/ui/ThemedText";
-import { ThemedView } from "@injured/ui/ThemedView";
-import { ThemedButton } from "@injured/ui/ThemedButton";
-import { useSettings } from "@/contexts/SettingsContext";
-import { useTranslation } from "@injured/i18n";
-import { useMutation, useQuery } from "convex/react";
-import { api } from "@injured/backend/convex/_generated/api";
 import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from "@expo/vector-icons";
+import { api } from "@injured/backend/convex/_generated/api";
+import { useTranslation } from "@injured/i18n";
+import { ThemedButton } from "@injured/ui/ThemedButton";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import { useMutation, useQuery } from "convex/react";
+import React from "react";
+import { StyleSheet, TextInput, View } from "react-native";
+
+import ParallaxScrollView from "@/components/ui/ParallaxScrollView";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
   const { language } = useSettings();
   const { user } = useUser();
-  const clerkUserId = user?.id;
+  const externalId = user?.id;
   const userDoc = useQuery(
     api.auth.users.getUserByClerkUserId,
-    clerkUserId ? { clerkUserId } : "skip",
+    externalId ? { externalId } : "skip",
+  );
+  const profileDoc = useQuery(
+    api["data/users"].getUserSettings,
+    userDoc?._id ? { userId: userDoc._id } : "skip",
   );
   const [name, setName] = React.useState("");
   const [firstName, setFirstName] = React.useState("");
@@ -30,9 +35,41 @@ export default function ProfileScreen() {
     if (userDoc) {
       setName(userDoc.name ?? "");
     }
-  }, [userDoc?.name]);
+    if (profileDoc) {
+      setFirstName((profileDoc as any)?.firstName ?? "");
+      setLastName((profileDoc as any)?.lastName ?? "");
+      setBio((profileDoc as any)?.bio ?? "");
+    }
+  }, [userDoc?.name, profileDoc]);
 
-  if (!userDoc) return null;
+  if (userDoc === undefined || profileDoc === undefined) {
+    return (
+      <ParallaxScrollView
+        headerBackgroundColor={{ light: "#D0D0D0", dark: "#353636" }}
+        headerImage={
+          <Ionicons size={310} name="people" style={styles.headerImage} />
+        }
+      >
+        <ThemedView style={styles.container}>
+          <ThemedText>Loading…</ThemedText>
+        </ThemedView>
+      </ParallaxScrollView>
+    );
+  }
+  if (!userDoc) {
+    return (
+      <ParallaxScrollView
+        headerBackgroundColor={{ light: "#D0D0D0", dark: "#353636" }}
+        headerImage={
+          <Ionicons size={310} name="people" style={styles.headerImage} />
+        }
+      >
+        <ThemedView style={styles.container}>
+          <ThemedText>Sign in to edit your profile.</ThemedText>
+        </ThemedView>
+      </ParallaxScrollView>
+    );
+  }
 
   return (
     <ParallaxScrollView

@@ -1,11 +1,11 @@
-import React from "react";
 import { Stack } from "expo-router";
+import React from "react";
 
 export default function ProvidersStackLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
-      <Stack.Screen name="[providerId]" />
+      <Stack.Screen name="[providerId]" options={{ animation: "fade" }} />
     </Stack>
   );
 }

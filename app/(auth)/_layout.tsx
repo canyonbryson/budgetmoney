@@ -1,18 +1,17 @@
-import { Redirect } from "expo-router";
 import { useAuth } from "@clerk/clerk-expo";
-import { Tabs } from "expo-router";
+import { Redirect, Href, Tabs } from "expo-router";
 import React from "react";
+import { useColorScheme } from "react-native";
 
 import { TabBarIcon } from "@/components/navigation/TabBarIcon";
 import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "react-native";
 
 export default function AuthRoutesLayout() {
   const colorScheme = useColorScheme();
   const { isSignedIn } = useAuth();
 
   if (isSignedIn) {
-    return <Redirect href={"/"} />;
+    return <Redirect href={"/" as Href} />;
   }
 
   return (

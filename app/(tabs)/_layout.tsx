@@ -1,17 +1,29 @@
+import { api } from "@injured/backend/convex/_generated/api";
+import { useTranslation } from "@injured/i18n";
+import { useQuery } from "convex/react";
+import { BlurView } from "expo-blur";
+import { Redirect, Tabs } from "expo-router";
 import * as React from "react";
 import { View, Platform } from "react-native";
-import { BlurView } from "expo-blur";
-import { Tabs } from "expo-router";
 
-import { Colors } from "@/constants/Colors";
 import { TabBarIcon } from "@/components/navigation/TabBarIcon";
+import { Colors } from "@/constants/Colors";
 import { useThemeColor } from "@/hooks/useThemeColor";
-import { useTranslation } from "@injured/i18n";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export default function TabLayout() {
+  const { isLoading, isAuthenticated } = useCurrentUser();
+  const me = useQuery(api.data.users.getMe);
   const activeTabColor = useThemeColor({}, "tabIconSelected");
   const inactiveTabColor = useThemeColor({}, "tabIconDefault");
   const { t } = useTranslation();
+
+  if (isLoading) return null;
+  if (me === undefined) return null;
+  if (!isAuthenticated) return <Redirect href="/(auth)/sign-in" />;
+  if (me && me.user && (!me.profile || me.profile.hasBeenOnboarded !== true)) {
+    return <Redirect href="/(onboarding)" />;
+  }
 
   return (
     <Tabs
@@ -20,8 +32,8 @@ export default function TabLayout() {
         tabBarStyle: {
           alignItems: "center",
           justifyContent: "center",
-          'alignContent': "center",
-          'paddingTop': 6,
+          alignContent: "center",
+          paddingTop: 6,
           height: 66,
           borderRadius: 50,
           borderWidth: 1,

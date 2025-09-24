@@ -1,10 +1,11 @@
-import React from "react";
-import { View, Text } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useTranslation } from "@injured/i18n";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
+import { useLocalSearchParams } from "expo-router";
+import React from "react";
+import { View, Text } from "react-native";
+
 import Screen from "@/components/ui/Screen";
-import { useTranslation } from "@injured/i18n";
 
 export default function ProviderDetailScreen() {
   const { providerId } = useLocalSearchParams();

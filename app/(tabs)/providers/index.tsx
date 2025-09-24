@@ -1,10 +1,11 @@
-import React from "react";
-import Screen from "@/components/ui/Screen";
+import { useTranslation } from "@injured/i18n";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
-import { useSettings } from "@/contexts/SettingsContext";
-import { useTranslation } from "@injured/i18n";
+import React from "react";
 import { StyleSheet } from "react-native";
+
+import Screen from "@/components/ui/Screen";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export default function ProvidersScreen() {
   const { t } = useTranslation();

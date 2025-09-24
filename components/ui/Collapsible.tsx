@@ -1,10 +1,10 @@
-import React from "react";
 import { Ionicons } from "@expo/vector-icons";
+import { ThemedText } from "@injured/ui/ThemedText";
+import { ThemedView } from "@injured/ui/ThemedView";
+import React from "react";
 import { PropsWithChildren, useState } from "react";
 import { StyleSheet, TouchableOpacity, useColorScheme } from "react-native";
 
-import { ThemedText } from "@injured/ui/ThemedText";
-import { ThemedView } from "@injured/ui/ThemedView";
 import { Colors } from "@/constants/Colors";
 
 export function Collapsible({

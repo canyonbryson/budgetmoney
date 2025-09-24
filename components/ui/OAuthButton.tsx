@@ -1,9 +1,9 @@
-import React from "react";
-import * as WebBrowser from "expo-web-browser";
 import { useSSO } from "@clerk/clerk-expo";
-import { Platform } from "react-native";
-import * as Linking from "expo-linking";
 import { ThemedButton } from "@injured/ui/ThemedButton";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
+import React from "react";
+import { Platform } from "react-native";
 
 type Props = {
   strategy: string;

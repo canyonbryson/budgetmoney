@@ -1,24 +1,24 @@
-import React from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
-import Screen from "@/components/ui/Screen";
+import { useTranslation } from "@injured/i18n";
 import {
   ThemedText,
   ThemedView,
   ThemedBadge,
   ThemedButton,
-  ThemedCard,
-  ThemedScreen,
   ThemedToggle,
+  ThemedCard,
   ThemedCheckbox,
   ThemedRadioGroup,
   ThemedRadioButton,
   ThemedInput,
   ThemedTextArea,
 } from "@injured/ui";
-import {GlowingButton as GlowingButtonComponent} from "@injured/ui/GlowingButton";
 import FormInput from "@injured/ui/FormInput";
-import { useTranslation } from "@injured/i18n";
-import { MotiView } from "moti";
+import { GlowingButton as GlowingButtonComponent } from "@injured/ui/GlowingButton";
+import { router } from "expo-router";
+import React from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
+
+import Screen from "@/components/ui/Screen";
 
 // Using named exports from the UI package root ensures types are resolved
 
@@ -29,7 +29,8 @@ export default function UiPrimitivesShowcase() {
   const [radio, setRadio] = React.useState("a");
   const Input = ThemedInput as unknown as React.ComponentType<any>;
   const FInput = FormInput as unknown as React.ComponentType<any>;
-  const GlowingButton = GlowingButtonComponent as unknown as React.ComponentType<any>;
+  const GlowingButton =
+    GlowingButtonComponent as unknown as React.ComponentType<any>;
   const [loading, setLoading] = React.useState(false);
 
   return (
@@ -42,49 +43,87 @@ export default function UiPrimitivesShowcase() {
         {/* Base primitives */}
         <Section title="Base Components">
           <ThemedView style={{ gap: 12 }}>
-            <ThemedCard 
+            <ThemedCard
               header={<ThemedText variant="heading">Themed Card</ThemedText>}
-              footer={<ThemedText variant="caption">Themed Card Footer</ThemedText>}
+              footer={
+                <ThemedText variant="caption">Themed Card Footer</ThemedText>
+              }
             >
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                  <ThemedBadge size="md" variant="success">Medium Success</ThemedBadge>
-                  <ThemedBadge size="lg" variant="error">Large Error</ThemedBadge>
-                  <ThemedBadge size="sm">Small Badge</ThemedBadge>
-                </View>
-                <ThemedText variant="heading">Display Text</ThemedText>
-                <ThemedText variant="subheading">Subheading Text</ThemedText>
-                <ThemedText>Content Text</ThemedText>
-                <ThemedText variant="caption">Caption Text</ThemedText>
-                <ThemedText variant="link">Link Text</ThemedText>
-                <ThemedText variant="success">Success Text</ThemedText>
-                <ThemedText variant="warning">Warning Text</ThemedText>
-                <ThemedText variant="error">Error Text</ThemedText>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                <ThemedBadge size="md" variant="success">
+                  Medium Success
+                </ThemedBadge>
+                <ThemedBadge size="lg" variant="error">
+                  Large Error
+                </ThemedBadge>
+                <ThemedBadge size="sm">Small Badge</ThemedBadge>
+              </View>
+              <ThemedText variant="heading">Display Text</ThemedText>
+              <ThemedText variant="subheading">Subheading Text</ThemedText>
+              <ThemedText>Content Text</ThemedText>
+              <ThemedText variant="caption">Caption Text</ThemedText>
+              <ThemedText variant="link">Link Text</ThemedText>
+              <ThemedText variant="success">Success Text</ThemedText>
+              <ThemedText variant="warning">Warning Text</ThemedText>
+              <ThemedText variant="error">Error Text</ThemedText>
             </ThemedCard>
           </ThemedView>
         </Section>
 
-        <GlowingButton />
-        
+        {/* <GlowingButton /> */}
+
+        <Input />
+
+        <ThemedTextArea
+          label="Text Area"
+          placeholder="Multiline..."
+          minRows={3}
+        />
+
         {/* Interactive */}
-        <Section title="Interactive"> 
+        <Section title="Interactive">
           <ThemedView style={{ gap: 12 }}>
-            <ThemedButton onPress={() => setLoading(true)} loading={loading}>Primary Button</ThemedButton>
-            <ThemedButton variant="secondary" onPress={() => setLoading(false)}>{loading ? "Stop Loading" : "Secondary Button"}</ThemedButton>
-            <ThemedCheckbox label="Checkbox" checked={checkOn} onChange={setCheckOn} />
-            <ThemedCheckbox label="Checkbox" checked={checkOn} onChange={setCheckOn} invalid />
-            <ThemedRadioGroup value={radio} onValueChange={setRadio} direction="row" gap={12}>
+            <ThemedButton onPress={() => setLoading(true)} loading={loading}>
+              Primary Button
+            </ThemedButton>
+            <ThemedButton variant="secondary" onPress={() => setLoading(false)}>
+              {loading ? "Stop Loading" : "Secondary Button"}
+            </ThemedButton>
+            {/* <ThemedToggle /> */}
+            <ThemedCheckbox
+              label="Checkbox"
+              checked={checkOn}
+              onChange={setCheckOn}
+            />
+            <ThemedCheckbox
+              label="Checkbox"
+              checked={checkOn}
+              onChange={setCheckOn}
+              invalid
+            />
+            <ThemedRadioGroup
+              value={radio}
+              onValueChange={setRadio}
+              direction="row"
+              gap={12}
+            >
               <ThemedRadioButton value="a" label="Option A" />
               <ThemedRadioButton value="b" label="Option B" />
               <ThemedRadioButton value="c" label="Option C" />
             </ThemedRadioGroup>
-            <Input label="Themed Input" placeholder="Type here" fullWidth />
             {/* FormInput states: default, focused, success, error */}
-            <FInput label="FormInput (default)" placeholder="Type here" fullWidth />
+            <FInput
+              label="FormInput (default)"
+              placeholder="Type here"
+              fullWidth
+            />
             <FInput
               label="Email (success on valid)"
               placeholder="you@example.com"
               keyboardType="email-address"
-              validate={(v: string) => (/^\S+@\S+\.\S+$/.test(v) ? null : "Enter a valid email")}
+              validate={(v: string) =>
+                /^\S+@\S+\.\S+$/.test(v) ? null : "Enter a valid email"
+              }
               helpText="Enter a valid email and blur to see success"
               fullWidth
             />
@@ -92,10 +131,11 @@ export default function UiPrimitivesShowcase() {
               label="Min length (error on < 5)"
               placeholder="At least 5 chars"
               defaultValue="abc"
-              validate={(v: string) => (v && v.length >= 5 ? null : "Must be at least 5 characters")}
+              validate={(v: string) =>
+                v && v.length >= 5 ? null : "Must be at least 5 characters"
+              }
               fullWidth
             />
-            <ThemedTextArea label="Text Area" placeholder="Multiline..." minRows={3} />
           </ThemedView>
         </Section>
       </ScrollView>
@@ -103,7 +143,13 @@ export default function UiPrimitivesShowcase() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <ThemedView style={{ gap: 8, marginBottom: 24 }}>
       <ThemedText variant="subheading">{title}</ThemedText>
@@ -115,15 +161,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'hsl(221 20% 11%)',
-    justifyContent: 'center',
+    backgroundColor: "hsl(221 20% 11%)",
+    justifyContent: "center",
   },
   heading: {
     opacity: 0.8,
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
     marginBottom: 24,
   },
   formContainer: {
@@ -138,18 +184,16 @@ const styles = StyleSheet.create({
   },
   text: {
     marginTop: 16,
-    color: 'white',
-    textAlign: 'center',
+    color: "white",
+    textAlign: "center",
     opacity: 0.6,
   },
   logoContainer: {
     marginTop: 60,
-    alignItems: 'center',
+    alignItems: "center",
   },
   logoImage: {
     width: 160,
     height: 160,
   },
 });
-
-

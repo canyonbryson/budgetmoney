@@ -1,24 +1,60 @@
 
 
 > @injured/mobile@1.0.0 lint /Users/canyon/Documents/Injured/apps/mobile
-> expo lint
+> eslint . --fix
 
-[90menv: load .env.local[39m
-[90menv: export CLERK_ISSUER_URL EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY OPENAI_API_KEY CONVEX_DEPLOYMENT VITE_CONVEX_URL EXPO_PUBLIC_CONVEX_URL VITE_CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY CLERK_SIGN_IN_URL[39m
-
-Oops! Something went wrong! :(
-
-ESLint: 8.57.1
-
-Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'eslint-plugin-react-native' imported from /Users/canyon/Documents/Injured/packages/eslint-config/react-native.js
-Did you mean to import "eslint-plugin-react-native/index.js"?
-    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:255:9)
-    at packageResolve (node:internal/modules/esm/resolve:767:81)
-    at moduleResolve (node:internal/modules/esm/resolve:853:18)
-    at defaultResolve (node:internal/modules/esm/resolve:983:11)
-    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:799:12)
-    at #cachedDefaultResolve (node:internal/modules/esm/loader:723:25)
-    at ModuleLoader.resolve (node:internal/modules/esm/loader:706:38)
-    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:307:38)
-    at #link (node:internal/modules/esm/module_job:170:49)
-[41m[30m ELIFECYCLE [39m[49m [31mCommand failed with exit code 2.[39m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(auth)/sign-in.tsx[24m[0m
+[0m  [2m44:6[22m  [33mwarning[39m  React Hook React.useCallback has missing dependencies: 'router', 'setActive', and 'signIn'. Either include them or remove the dependency array  [2mreact-hooks/exhaustive-deps[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(modals)/family.tsx[24m[0m
+[0m  [2m11:1[22m   [33mwarning[39m  There should be no empty line within import group                                                                                               [2mimport/order[22m[0m
+[0m  [2m18:11[22m  [33mwarning[39m  'language' is assigned a value but never used                                                                                                   [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m44:6[22m   [33mwarning[39m  React Hook React.useEffect has a missing dependency: 'familyOrg'. Either include it or remove the dependency array                              [2mreact-hooks/exhaustive-deps[22m[0m
+[0m  [2m44:7[22m   [33mwarning[39m  React Hook React.useEffect has a complex expression in the dependency array. Extract it to a separate variable so it can be statically checked  [2mreact-hooks/exhaustive-deps[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(modals)/profile.tsx[24m[0m
+[0m  [2m10:33[22m  [33mwarning[39m  'View' is defined but never used                                                                                  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m17:11[22m  [33mwarning[39m  'language' is assigned a value but never used                                                                     [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m34:6[22m   [33mwarning[39m  React Hook React.useEffect has a missing dependency: 'userDoc'. Either include it or remove the dependency array  [2mreact-hooks/exhaustive-deps[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/ask-ai.tsx[24m[0m
+[0m  [2m29:11[22m  [33mwarning[39m  'language' is assigned a value but never used   [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m35:9[22m   [33mwarning[39m  'effective' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m61:14[22m  [33mwarning[39m  'e' is defined but never used                   [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/index.tsx[24m[0m
+[0m  [2m15:11[22m  [33mwarning[39m  'language' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/injured/index.tsx[24m[0m
+[0m  [2m11:11[22m  [33mwarning[39m  'language' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/providers/[providerId].tsx[24m[0m
+[0m  [2m6:10[22m  [33mwarning[39m  'View' is defined but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m6:16[22m  [33mwarning[39m  'Text' is defined but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/providers/index.tsx[24m[0m
+[0m  [2m12:11[22m  [33mwarning[39m  'language' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/settings/index.tsx[24m[0m
+[0m  [2m16:11[22m  [33mwarning[39m  'language' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/settings/ui-components.tsx[24m[0m
+[0m  [2m118:14[22m  [33mwarning[39m  'e' is defined but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/(tabs)/settings/ui-primitives.tsx[24m[0m
+[0m    [2m7:3[22m   [33mwarning[39m  'ThemedToggle' is defined but never used            [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m17:10[22m  [33mwarning[39m  'router' is defined but never used                  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m27:10[22m  [33mwarning[39m  'toggleOn' is assigned a value but never used       [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m27:20[22m  [33mwarning[39m  'setToggleOn' is assigned a value but never used    [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m32:9[22m   [33mwarning[39m  'GlowingButton' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m161:7[22m   [33mwarning[39m  'styles' is assigned a value but never used         [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/app/_layout.tsx[24m[0m
+[0m  [2m53:14[22m  [33mwarning[39m  'err' is defined but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4m/Users/canyon/Documents/Injured/apps/mobile/components/ui/OAuthButton.tsx[24m[0m
+[0m  [2m43:6[22m  [33mwarning[39m  React Hook React.useCallback has missing dependencies: 'startSSOFlow' and 'strategy'. Either include them or remove the dependency array  [2mreact-hooks/exhaustive-deps[22m[0m
+[0m[0m
+[0m[33m[1m✖ 26 problems (0 errors, 26 warnings)[22m[39m[0m
+[0m[33m[1m[22m[39m[0m

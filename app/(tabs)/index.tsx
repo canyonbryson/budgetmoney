@@ -1,26 +1,13 @@
-import { StyleSheet, View } from "react-native";
-import { MotiView } from "moti";
-
-import Screen from "@/components/ui/Screen";
+import { useUser, useAuth } from "@clerk/clerk-expo";
+import { useTranslation } from "@injured/i18n";
+import { ThemedButton } from "@injured/ui/ThemedButton";
+import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
 import React from "react";
-import { ThemedButton } from "@injured/ui/ThemedButton";
-import { useUser, useAuth } from "@clerk/clerk-expo";
-import { ThemedText } from "@injured/ui/ThemedText";
-import { useTranslation } from "@injured/i18n";
+import { StyleSheet, View } from "react-native";
+
+import Screen from "@/components/ui/Screen";
 import { useSettings } from "@/contexts/SettingsContext";
-
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
-import { useEffect } from "react";
-
-const Probe = () => {
-  const x = useSharedValue(0);
-  useEffect(() => {
-    x.value = withTiming(50, { duration: 300 });
-  }, []);
-  const style = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
-  return <Animated.View style={[{ width: 20, height: 20, backgroundColor: 'cyan' }, style]} />;
-};
 
 // Inside your screen JSX:
 
@@ -48,23 +35,10 @@ export default function HomeScreen() {
           </ThemedText>
           <ThemedButton onPress={onSignOutPress}>{t("signOut")}</ThemedButton>
         </View>
-
-        <Probe />
- 
-        <MotiView
-          from={{ opacity: 0, translateY: 12 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: "timing", duration: 600 }}
-          style={{ width: 80, height: 80, backgroundColor: 'tomato', borderRadius: 8 }}
-        >
-          <ThemedText>Hello</ThemedText>
-        </MotiView>
       </ThemedView>
     </Screen>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   titleContainer: {

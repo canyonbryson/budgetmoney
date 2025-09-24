@@ -1,6 +1,7 @@
-import React from "react";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
+import React from "react";
+
 import Screen from "@/components/ui/Screen";
 
 export default function ForgotPasswordScreen() {

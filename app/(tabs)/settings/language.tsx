@@ -1,12 +1,13 @@
-import { StyleSheet, View } from "react-native";
-import Screen from "@/components/ui/Screen";
+import { useTranslation } from "@injured/i18n";
+import { ThemedButton } from "@injured/ui/ThemedButton";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
-import React from "react";
-import { ThemedButton } from "@injured/ui/ThemedButton";
-import { useSettings } from "@/contexts/SettingsContext";
-import { useTranslation } from "@injured/i18n";
 import { router } from "expo-router";
+import React from "react";
+import { StyleSheet, View } from "react-native";
+
+import Screen from "@/components/ui/Screen";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export default function LanguageSettings() {
   const { t } = useTranslation();

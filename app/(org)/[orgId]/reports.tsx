@@ -1,7 +1,7 @@
-import React from "react";
+import { useTranslation } from "@injured/i18n";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedView } from "@injured/ui/ThemedView";
-import { useTranslation } from "@injured/i18n";
+import React from "react";
 
 export default function OrganizationReports() {
   const { t } = useTranslation();

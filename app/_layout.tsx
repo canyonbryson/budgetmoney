@@ -1,46 +1,35 @@
+import "react-native-gesture-handler";
 import "react-native-reanimated";
-import 'react-native-gesture-handler'
-import 'react-native-svg'
+import "react-native-svg";
 
+import { ClerkLoaded, ClerkProvider, useAuth } from "@clerk/clerk-expo";
+import { i18n, initI18n } from "@injured/i18n";
+import { ThemeProvider as UIThemeProvider } from "@injured/ui";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider as NavigationThemeProvider,
 } from "@react-navigation/native";
-import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
-
-import { ClerkLoaded, ClerkProvider, useAuth } from "@clerk/clerk-expo";
-import * as SecureStore from "expo-secure-store";
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { SettingsProvider, useSettings } from "@/contexts/SettingsContext";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-import { i18n, initI18n } from "@injured/i18n";
+import { useFonts } from "expo-font";
 import * as Localization from "expo-localization";
+import { Stack } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import * as SplashScreen from "expo-splash-screen";
+import React, { useEffect } from "react";
 import { I18nManager, useColorScheme } from "react-native";
-import { ThemeProvider as UIThemeProvider } from "@injured/ui";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-// Create a Convex client
-const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL;
-if (!convexUrl) {
-  // Fail fast with a clear message if Convex URL is missing
-  throw new Error(
-    "Missing Convex URL. Please set EXPO_PUBLIC_CONVEX_URL in your .env",
-  );
-}
-const convex = new ConvexReactClient(convexUrl, {
-  unsavedChangesWarning: false,
-});
+import { SettingsProvider, useSettings } from "@/contexts/SettingsContext";
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
-if (!publishableKey) {
-  throw new Error(
-    "Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env",
-  );
-}
+// Configure Convex/Clerk from env with safe fallbacks (avoid throwing during dev)
+const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL ?? "";
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+const hasEnv = Boolean(convexUrl) && Boolean(publishableKey);
+const convex = convexUrl
+  ? new ConvexReactClient(convexUrl, { unsavedChangesWarning: false })
+  : null;
 
 const tokenCache = {
   async getToken(key: string) {
@@ -150,22 +139,58 @@ function InnerApp() {
         ? "dark"
         : "light";
 
-  const uiMode = (contrast === "high"
-    ? baseMode === "dark"
-      ? "highContrastDark"
-      : "highContrastLight"
-    : baseMode) as any;
+  const uiMode = (
+    contrast === "high"
+      ? baseMode === "dark"
+        ? "highContrastDark"
+        : "highContrastLight"
+      : baseMode
+  ) as any;
+
+  if (!hasEnv || !convex) {
+    return (
+      <SafeAreaProvider>
+        <NavigationThemeProvider value={effectiveTheme}>
+          <Stack>
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          </Stack>
+        </NavigationThemeProvider>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <ClerkLoaded>
           <SafeAreaProvider>
-            <UIThemeProvider mode={uiMode}>
+            <UIThemeProvider
+              mode={uiMode}
+              t={i18n.t.bind(i18n)}
+              locale={i18n.language}
+            >
               <NavigationThemeProvider value={effectiveTheme}>
                 <Stack>
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                  <Stack.Screen
+                    name="(marketing)"
+                    options={{ headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="(tabs)"
+                    options={{ headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="(auth)"
+                    options={{ headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="(modals)"
+                    options={{ presentation: "modal", headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="(onboarding)"
+                    options={{ headerShown: false }}
+                  />
                   <Stack.Screen name="+not-found" />
                 </Stack>
               </NavigationThemeProvider>
