@@ -1,134 +1,251 @@
-import { api } from "@injured/backend/convex/_generated/api";
 import { useTranslation } from "@injured/i18n";
-import { ThemedInput as ThemedInputRN } from "@injured/ui";
-import { ThemedButton } from "@injured/ui/ThemedButton";
-import { ThemedText } from "@injured/ui/ThemedText";
-import { ThemedView } from "@injured/ui/ThemedView";
-import { useAction } from "convex/react";
+import {
+  GlowingInput,
+  Icons,
+  ThemedButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  ThemedView,
+  useTheme,
+} from "@injured/ui";
+import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import type ReactNamespace from "react";
 import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
+  TextInput,
+  TouchableOpacity,
   View,
-  ActivityIndicator,
-  useColorScheme,
 } from "react-native";
+
+import { LinearGradient } from "expo-linear-gradient";
 
 import Screen from "@/components/ui/Screen";
 import { useSettings } from "@/contexts/SettingsContext";
 
-// Theme is provided via UI ThemeProvider; avoid direct theme import here
-const Input = ThemedInputRN as unknown as ReactNamespace.ComponentType<any>;
+type QuickChat = {
+  id: string;
+  timeKey: string;
+  title: string;
+};
 
-type Message = { id: string; role: "user" | "assistant"; content: string };
+const PREVIOUS_CHATS: QuickChat[] = [
+  { id: "today-1", timeKey: "askAiScreen.chatTimes.today", title: "askAiScreen.cardTitle_1" },
+  { id: "today-2", timeKey: "askAiScreen.chatTimes.todayAlt", title: "askAiScreen.cardTitle_2" },
+  { id: "monday", timeKey: "askAiScreen.chatTimes.monday", title: "askAiScreen.cardTitle_3" },
+  { id: "friday", timeKey: "askAiScreen.chatTimes.friday", title: "askAiScreen.cardTitle_4" },
+];
 
 export default function AskAiScreen() {
   const { t } = useTranslation();
-  const { language, theme } = useSettings();
-  const [messages, setMessages] = React.useState<Message[]>([]);
+  const theme = useTheme();
+  const { reducedMotion } = useSettings();
   const [input, setInput] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const ask = useAction(api.ask_ai.ask);
-  const system = useColorScheme() ?? "light";
-  const effective = theme === "system" ? system : theme;
-  const palette = {
-    // minimal fallback palette usage removed; rely on Themed components
-    muted: "#f2f2f2",
-    card: "#ffffff",
-    border: "#e5e5e5",
-  } as any;
 
-  const onSend = React.useCallback(async () => {
+  const navigateToChat = React.useCallback(() => {
+    // stub
+  }, []);
+
+  const submit = React.useCallback(() => {
+    // stub
+  }, []);
+
+  const onSubmit = React.useCallback(() => {
     if (!input.trim()) return;
-    const userMessage: Message = {
-      id: String(Date.now()),
-      role: "user",
-      content: input.trim(),
-    };
-    setMessages((prev) => [userMessage, ...prev]);
+    submit();
     setInput("");
-    try {
-      setLoading(true);
-      const content = await ask({ prompt: userMessage.content });
-      const reply: Message = {
-        id: String(Date.now() + 1),
-        role: "assistant",
-        content: content || "",
-      };
-      setMessages((prev) => [reply, ...prev]);
-    } catch (e) {
-      const reply: Message = {
-        id: String(Date.now() + 1),
-        role: "assistant",
-        content: "Sorry, something went wrong.",
-      };
-      setMessages((prev) => [reply, ...prev]);
-    } finally {
-      setLoading(false);
-    }
-  }, [input, ask]);
+  }, [input, submit]);
 
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.select({ ios: "padding", android: undefined })}
     >
-      <Screen>
-        <ThemedText variant="heading" style={styles.screenTitle}>
-          {t("askAi")}
-        </ThemedText>
-        <View style={styles.inputRow}>
-          <Input
-            placeholder={t("promptPlaceholder")}
-            value={input}
-            onChange={(e: any) =>
-              setInput(e?.target?.value ?? e?.nativeEvent?.text ?? "")
-            }
-            style={{ width: "100%", flex: 1 } as any}
-          />
-          <ThemedButton onPress={onSend} disabled={loading}>
-            {t("send")}
-          </ThemedButton>
-        </View>
-        <View style={styles.messages}>
-          {loading && <ActivityIndicator size="small" />}
-          {messages.map((m) => {
-            const bubbleStyle: any = {
-              padding: 16,
-              borderRadius: 12,
-              backgroundColor:
-                m.role === "assistant" ? palette.muted : palette.card,
-              borderColor: palette.border,
-              borderWidth: StyleSheet.hairlineWidth,
-            };
-            return (
-              <ThemedView key={m.id} style={bubbleStyle}>
-                <ThemedText>{m.content}</ThemedText>
-              </ThemedView>
-            );
-          })}
-        </View>
-      </Screen>
+      <ThemedScreen>
+        <ThemedView style={styles.container}>
+          <View style={styles.header}>
+            <ThemedView style={styles.heroIcon}>
+              <Icons.chat width={64} height={64} color={theme.colors.primary} />
+            </ThemedView>
+            <ThemedText
+              i18nKey="askAiScreen.title"
+              size="4xl"
+              weight="bold"
+              style={styles.title}
+              align="center"
+              color={theme.colors.primary}
+            >
+              OrthoAgent
+            </ThemedText>
+            <ThemedText
+              i18nKey="askAiScreen.subtitle"
+              style={styles.subtitle}
+              align="center"
+              numberOfLines={3}
+            >
+              Your go-to assistant for quick answers about surgery, recovery, and
+              PT.
+            </ThemedText>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <GlowingInput
+              style={styles.promptInput}
+              inputStyle={{ marginRight: 75 }}
+              placeholder={t("askAiScreen.placeholder")}
+              value={input}
+              onChangeText={setInput}
+              reducedMotion={reducedMotion}
+              rightIcon={
+                <View style={{ flexDirection: "row"}}>
+                  <TouchableOpacity
+                    style={styles.iconPill}
+                    onPress={navigateToChat}
+                    accessibilityLabel={t("askAiScreen.attachImage")}
+                  >
+                    <Ionicons
+                      name="image-outline"
+                      size={18}
+                      color={theme.colors.primaryForeground}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.iconPill}
+                    onPress={navigateToChat}
+                    accessibilityLabel={t("askAiScreen.attachDocument")}
+                  >
+                    <Ionicons
+                      name="document-text-outline"
+                      size={18}
+                      color={theme.colors.primaryForeground}
+                    />
+                  </TouchableOpacity>
+                </View>}
+              />
+          </View>
+
+          <View style={styles.cardsGrid}>
+            {PREVIOUS_CHATS.map((chat) => (
+              <ThemedCard
+                key={chat.id}
+                variant="glass"
+                padding="20px"
+                margin={0}
+                width={'175%'}
+              >
+                <View style={styles.cardContent}>
+                  <ThemedText
+                    weight="bold"
+                    size="sm"
+                    numberOfLines={2}
+                  >
+                    {t(chat.title)}
+                  </ThemedText>
+                  <ThemedText
+                    size="xs"
+                    i18nKey={chat.timeKey}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={styles.cardFooter}
+                  onPress={navigateToChat}
+                  accessibilityRole="button"
+                >
+                  <ThemedText
+                    size="xs"
+                    i18nKey="askAiScreen.continueChat"
+                  />
+                  <Ionicons
+                    name="arrow-forward-circle"
+                    size={18}
+                    color={theme.colors.primary}
+                  />
+                </TouchableOpacity>
+              </ThemedCard>
+            ))}
+          </View>
+        </ThemedView>
+      </ThemedScreen>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  screenTitle: {
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 20,
-  },
-  inputRow: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  messages: {
+  container: {
     flex: 1,
-    gap: 12,
+    paddingVertical: 32,
+    gap: 30,
+  },
+  header: {
+    alignItems: "center",
+    gap: 16,
+  },
+  heroIcon: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15, 143, 234, 0.14)",
+  },
+  title: {
+    textAlign: "center",
+  },
+  subtitle: {
+    textAlign: "center",
+    opacity: 0.88,
+  },
+  inputContainer: {
+    gap: 18,
+  },
+  promptGradient: {
+    borderRadius: 34,
+    padding: 3,
+  },
+  promptInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 30,
+    backgroundColor: "rgba(10, 19, 31, 0.92)",
+  },
+  promptInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+  iconPill: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+    backgroundColor: "rgba(15, 143, 234, 0.18)",
+  },
+  primaryAction: {
+    alignSelf: "stretch",
+  },
+  cardsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 20,
+  },
+  cardContent: {
+    gap: 8,
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
   },
 });

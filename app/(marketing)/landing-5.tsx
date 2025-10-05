@@ -3,22 +3,28 @@ import { View, StyleSheet, Pressable } from "react-native";
 import { ThemedView } from "@injured/ui/ThemedView";
 import { ThemedText } from "@injured/ui/ThemedText";
 import { ThemedButton } from "@injured/ui/ThemedButton";
-import { Branding, useThemeContext } from "@injured/ui";
+import { Branding } from "@injured/ui";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const KEY = "hasSeenLandingPage:v1";
 
-export default function Onboarding() {
+export default function Landing5() {
   const router = useRouter();
-  const {theme} = useThemeContext();
 
-  const handleTour = React.useCallback(async () => {
+  const handleCreateAccount = React.useCallback(async () => {
     try {
       await AsyncStorage.setItem(KEY, "true");
     } catch {}
-    router.push("./onboarding-1");
+    router.replace("/(registration)/account-creation");
+  }, [router]);
+
+  const handleLogin = React.useCallback(async () => {
+    try {
+      await AsyncStorage.setItem(KEY, "true");
+    } catch {}
+    router.replace("/(auth)/sign-in");
   }, [router]);
 
   return (
@@ -34,11 +40,15 @@ export default function Onboarding() {
             <View style={styles.titleSection}>
               <View style={styles.titleContainer}>
                 <ThemedText
-                  size="4xl"
-                  weight="bold"
-                  i18nKey="onboarding.welcome"
+                  style={styles.appTitle}
+                  i18nKey="appName"
                 />
               </View>
+
+              <ThemedText
+                style={styles.subtitle}
+                i18nKey="landing5.tagline"
+              />
             </View>
 
             {/* Create Account Button */}
@@ -46,9 +56,27 @@ export default function Onboarding() {
               variant="primary"
               size="md"
               fullWidth
-              onPress={handleTour}
-              i18nKey="onboarding.tour"
+              onPress={handleCreateAccount}
+              i18nKey="createAccount"
             />
+
+            {/* Returning User Link */}
+            <Pressable onPress={handleLogin} style={styles.loginLink}>
+              <ThemedText style={styles.loginText}>
+                <ThemedText i18nKey="landing5.returningUser" />
+                {" "}
+                <ThemedText style={styles.linkText} i18nKey="landing5.logIn" />
+              </ThemedText>
+            </Pressable>
+          </View>
+
+          {/* Healthcare Provider Link (not implemented) */}
+          <View style={styles.providerSection}>
+            <ThemedText style={styles.providerText}>
+              <ThemedText i18nKey="landing5.healthcareProvider" />
+              {" "}
+              <ThemedText style={styles.linkText} i18nKey="landing5.providerLogin" />
+            </ThemedText>
           </View>
         </View>
       </SafeAreaView>

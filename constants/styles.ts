@@ -13,20 +13,12 @@ export const styles = StyleSheet.create({
     display: "flex",
     gap: 8,
   },
-  authScreen: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   authForm: {
     padding: 18,
-    display: "flex",
     gap: 8,
     width: "100%",
+    height: "100%",
+    justifyContent: "center",
   },
   stepContainer: {
     gap: 8,

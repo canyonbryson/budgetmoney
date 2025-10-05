@@ -184,6 +184,10 @@ function InnerApp() {
                     options={{ headerShown: false }}
                   />
                   <Stack.Screen
+                    name="(registration)"
+                    options={{ headerShown: false }}
+                  />
+                  <Stack.Screen
                     name="(modals)"
                     options={{ presentation: "modal", headerShown: false }}
                   />

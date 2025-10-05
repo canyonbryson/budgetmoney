@@ -4,7 +4,7 @@
 Get android/ios credentials
 https://docs.expo.dev/push-notifications/push-notifications-setup/
 
-
+https://www.youtube.com/watch?v=BCCjGtKtBjE
 
 ```tsx
 import { useState, useEffect, useRef } from 'react';

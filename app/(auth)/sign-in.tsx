@@ -3,19 +3,23 @@ import { Ionicons } from "@expo/vector-icons";
 import MaterialCommunityIcons from "@expo/vector-icons/build/MaterialCommunityIcons";
 import { ThemedButton } from "@injured/ui/ThemedButton";
 import { ThemedText } from "@injured/ui/ThemedText";
-import { ThemedView } from "@injured/ui/ThemedView";
+import { Branding, Icons, PasswordInput, ThemedScreen, useThemeContext } from "@injured/ui";
+import { FormInput } from "@injured/ui";
 import { Link, useRouter } from "expo-router";
 import React from "react";
-import { Text, View, ActivityIndicator, TextInput } from "react-native";
+import { View, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
 
 import OAuthButton from "@/components/ui/OAuthButton";
 import { styles } from "@/constants/styles";
+import { useTranslation } from "@injured/i18n";
 
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn();
   const router = useRouter();
+  const { t } = useTranslation();
+  const { theme } = useThemeContext();
 
-  const [emailAddress, setEmailAddress] = React.useState("");
+  const [phoneNumber, setPhoneNumber] = React.useState("");
   const [password, setPassword] = React.useState("");
 
   const onSignInPress = React.useCallback(async () => {
@@ -25,7 +29,7 @@ export default function SignInScreen() {
 
     try {
       const signInAttempt = await signIn.create({
-        identifier: emailAddress,
+        identifier: phoneNumber,
         password,
       });
 
@@ -41,88 +45,88 @@ export default function SignInScreen() {
     } catch (err: any) {
       console.error(JSON.stringify(err, null, 2));
     }
-  }, [isLoaded, emailAddress, password]);
+  }, [isLoaded, phoneNumber, password]);
 
   if (!isLoaded) {
     return <ActivityIndicator size="large" />;
   }
 
+  const footer = (
+    <View
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        flex: 1,
+        flexDirection: "row",
+        gap: 4,
+      }}
+    >
+      <Link href="/(registration)/account-creation">
+        <ThemedText i18nKey="newUser" />
+        &nbsp;&nbsp;
+        <ThemedText style={{ color: theme.colors.primary }} i18nKey="createAccount" />
+      </Link>
+    </View>
+  );
+
   return (
-    <View style={styles.authScreen}>
+    <ThemedScreen scroll={false} footer={footer}>
       <View style={styles.authForm}>
+        {/* Branding */}
+        <View style={{ alignItems: "center", marginBottom: 12 }}>
+          <Branding.logoIcon color={theme.colors.primary} width={85} height={138} />
+        </View>
+
         {/* Header text */}
-        <ThemedView style={{ marginVertical: 16, alignItems: "center" }}>
-          <ThemedText variant="heading">Sign into Injured</ThemedText>
-          <ThemedText variant="default">
-            Welcome back! Please sign in to continue
-          </ThemedText>
-        </ThemedView>
+        <View style={{ marginVertical: 20, alignItems: "center", gap: 10 }}>
+          <ThemedText variant="heading" style={{ textAlign: "center", fontSize: 40, paddingTop: 4 }} i18nKey="signInTitle" />
+          <ThemedText variant="default" style={{ textAlign: "center" }} i18nKey="signInSubtitle" />
+        </View>
+
+        {/* Inputs */}
+        <View style={{ gap: 20, marginBottom: 30 }}>
+          <FormInput
+            i18nLabelKey="phoneNumber"
+            placeholder="Phone Number"
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            keyboardType="phone-pad"
+            textContentType={Platform.OS === "ios" ? "telephoneNumber" : undefined}
+            autoCapitalize="none"
+            fullWidth
+          />
+          <PasswordInput
+            i18nLabelKey="password"
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            textContentType={Platform.OS === "ios" ? "password" : undefined}
+            autoCapitalize="none"
+            fullWidth
+          />
+        </View>
+
+        {/* Primary CTA */}
+        <ThemedButton onPress={onSignInPress} size="lg" fullWidth i18nKey="login" />
+
+        <View style={{ marginVertical: 20 }}/>
+        
 
         {/* OAuth buttons */}
-        <View
-          style={{
-            display: "flex",
-            flexDirection: "row",
-            gap: 8,
-          }}
-        >
-          <View style={{ flex: 1 }}>
+        <View style={{ display: "flex", flexDirection: "row", justifyContent: "center", width: "100%", gap: 30 }}>
+          <View>
             <OAuthButton strategy="oauth_google">
-              <MaterialCommunityIcons name="google" size={18} /> Google
+              <Icons.google size={28} color={theme.colors.iconSecondary} /> 
+            </OAuthButton>
+          </View>
+          <View>
+            <OAuthButton strategy="oauth_apple">
+              <Ionicons name="logo-apple" size={28} color={theme.colors.iconSecondary} /> 
             </OAuthButton>
           </View>
         </View>
 
-        {/* Form separator */}
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={{ flex: 1, height: 1, backgroundColor: "#eee" }} />
-          <View>
-            <Text style={{ width: 50, textAlign: "center", color: "#555" }}>
-              or
-            </Text>
-          </View>
-          <View style={{ flex: 1, height: 1, backgroundColor: "#eee" }} />
-        </View>
-
-        {/* Input fields */}
-        <View style={{ gap: 8, marginBottom: 24 }}>
-          <Text>Email address</Text>
-          <TextInput
-            style={styles.input}
-            autoCapitalize="none"
-            value={emailAddress}
-            onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
-          />
-          <Text>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            secureTextEntry={true}
-            onChangeText={(password) => setPassword(password)}
-          />
-        </View>
-
-        {/* Sign in button */}
-        <ThemedButton onPress={onSignInPress}>
-          <Text>Sign in</Text> <Ionicons name="caret-forward" />
-        </ThemedButton>
-
-        {/* Suggest new users create an account */}
-        <View
-          style={{
-            display: "flex",
-            flexDirection: "row",
-            gap: 4,
-            justifyContent: "center",
-            marginVertical: 18,
-          }}
-        >
-          <Text>Don't have an account?</Text>
-          <Link href="/sign-up">
-            <Text style={{ fontWeight: "bold" }}>Sign up</Text>
-          </Link>
-        </View>
       </View>
-    </View>
+    </ThemedScreen>
   );
 }

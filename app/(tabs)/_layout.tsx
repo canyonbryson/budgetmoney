@@ -10,13 +10,16 @@ import { TabBarIcon } from "@/components/navigation/TabBarIcon";
 import { Colors } from "@/constants/Colors";
 import { useThemeColor } from "@/hooks/useThemeColor";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { Branding, Icons, useTheme } from "@injured/ui/src";
 
 export default function TabLayout() {
   const { isLoading, isAuthenticated } = useCurrentUser();
   const me = useQuery(api.data.users.getMe);
-  const activeTabColor = useThemeColor({}, "tabIconSelected");
-  const inactiveTabColor = useThemeColor({}, "tabIconDefault");
   const { t } = useTranslation();
+  const theme = useTheme();
+
+  const activeTabColor = theme.colors.primary;
+  const inactiveTabColor = theme.colors.iconSecondary;
 
   if (isLoading) return null;
   if (me === undefined) return null;
@@ -33,21 +36,17 @@ export default function TabLayout() {
           alignItems: "center",
           justifyContent: "center",
           alignContent: "center",
-          paddingTop: 6,
+          paddingTop: 14,
           height: 66,
           borderRadius: 50,
           borderWidth: 1,
-          marginHorizontal: 12,
-          marginBottom: 22,
+          marginHorizontal: 20,
+          marginBottom: 30,
           position: "absolute",
           backgroundColor: "transparent",
         },
         tabBarActiveTintColor: activeTabColor,
         tabBarInactiveTintColor: inactiveTabColor,
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "500",
-        },
         tabBarBackground: () =>
           Platform.OS === "ios" ? (
             <BlurView
@@ -75,12 +74,9 @@ export default function TabLayout() {
         name="index"
         options={{
           title: t("home"),
-          tabBarLabel: t("home"),
+          tabBarLabel: '',
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? "home" : "home-outline"}
-              color={color}
-            />
+            <Icons.home width={36} height={36} color={color} />
           ),
         }}
       />
@@ -88,12 +84,9 @@ export default function TabLayout() {
         name="ask-ai"
         options={{
           title: t("askAi"),
-          tabBarLabel: t("askAi"),
+          tabBarLabel: '',
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? "chatbubble" : "chatbubble-outline"}
-              color={color}
-            />
+            <Icons.chat width={36} height={36} color={color} />
           ),
         }}
       />
@@ -101,12 +94,11 @@ export default function TabLayout() {
         name="injured"
         options={{
           title: t("injured"),
-          tabBarLabel: t("injured"),
+          tabBarLabel: '',
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? "medkit" : "medkit-outline"}
-              color={color}
-            />
+            <View style={{ width: 50, height: 50, borderRadius: 99, overflow: "hidden", backgroundColor: focused ? color : theme.colors.border, justifyContent: "center", alignItems: "center" }}>
+                <Branding.logoIcon width={24} height={36} color={focused ? "white" : theme.colors.iconSecondary} />
+              </View>
           ),
         }}
       />
@@ -114,12 +106,9 @@ export default function TabLayout() {
         name="providers"
         options={{
           title: t("providers"),
-          tabBarLabel: t("providers"),
+          tabBarLabel: '',
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? "people" : "people-outline"}
-              color={color}
-            />
+            <Icons.provider width={36} height={36} color={color} />
           ),
         }}
       />
@@ -127,12 +116,9 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: t("settings"),
-          tabBarLabel: t("settings"),
+          tabBarLabel: '',
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? "settings" : "settings-outline"}
-              color={color}
-            />
+            <Icons.settings width={36} height={36} color={color} />
           ),
         }}
       />

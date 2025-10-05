@@ -1,9 +1,9 @@
 import { useSSO } from "@clerk/clerk-expo";
-import { ThemedButton } from "@injured/ui/ThemedButton";
+import { useThemeContext } from "@injured/ui/src/theme-context";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import React from "react";
-import { Platform } from "react-native";
+import { Platform, Pressable } from "react-native";
 
 type Props = {
   strategy: string;
@@ -13,6 +13,8 @@ type Props = {
 WebBrowser.maybeCompleteAuthSession();
 
 export default function OAuthButton({ strategy, children }: Props) {
+  const { theme } = useThemeContext();
+
   React.useEffect(() => {
     if (Platform.OS !== "android") return;
 
@@ -42,5 +44,5 @@ export default function OAuthButton({ strategy, children }: Props) {
     }
   }, []);
 
-  return <ThemedButton onPress={onPress}>{children}</ThemedButton>;
+  return <Pressable style={{ borderWidth: 2, borderColor: theme.colors.actionSecondaryBorder, width: 50, height: 50, justifyContent: "center", alignItems: "center", borderRadius: 14 }} onPress={onPress}>{children}</Pressable>;
 }

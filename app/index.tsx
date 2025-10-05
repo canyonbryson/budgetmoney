@@ -12,7 +12,7 @@ function AuthedRedirect() {
     getLanding().then(setHasSeenLanding).catch(() => setHasSeenLanding(false));
   }, []);
   if (!isLoaded || hasSeenLanding === null) return null;
-  if (!hasSeenLanding) return <Redirect href={"/(marketing)/benefits" as Href} />;
+  if (!hasSeenLanding) return <Redirect href={"/(marketing)/loading" as Href} />;
   return (
     <Redirect href={(isSignedIn ? "/(tabs)" : "/(auth)/sign-in") as Href} />
   );
