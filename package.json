@@ -2,18 +2,20 @@
   "name": "@injured/mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
+    "eas-build-pre-install": "corepack enable",
     "expo": "expo",
     "prebuild:ios": "expo prebuild --no-install --platform ios",
     "dev": "EXPO_NO_INTERACTIVE=1 expo start --lan --clear",
     "start": "expo start",
+    "build": "expo export --output-dir ./build --platform ios",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "eas-build-post-install": "pnpm run -w build:mobile"
   },
   "peerDependencies": {
     "react": "19.1.0",
@@ -84,7 +86,6 @@
     "typescript": "~5.9.2"
   },
   "private": true,
-  "packageManager": "pnpm@10.13.1",
   "dependenciesMeta": {
     "@injured/backend": {
       "injected": true

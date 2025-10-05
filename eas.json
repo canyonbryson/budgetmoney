@@ -17,9 +17,6 @@
         "autoIncrement": true,
         "node": "20.11.1"
       }
-    },
-    "hooks": {
-      "pre-install": "corepack enable && cp -f ../../pnpm-lock.yaml ./pnpm-lock.yaml"
     }
   }
   
