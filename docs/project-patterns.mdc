@@ -3,98 +3,31 @@ description:
 globs:
 alwaysApply: true
 ---
-
 # docs/PROJECT_GUIDE.md
 
 # Project Guide — Structure, Stack, Patterns
 
-This document teaches contributors (and AI) **how this repository is organized** and how to build within it.
-
-## 1) Repository layout (monorepo)
-
-````
-
-/apps
-/native                # Expo app (Expo Router)
-/packages
-/backend               # Convex backend (schema, functions, http actions)
-/shared                # Shared TS types, zod schemas, constants
-/ui                    # Cross-app UI components (NativeWind-styled)
-/config                # ESLint, TSConfig, Prettier, Tailwind config
-/docs                    # This guide + other docs
+## Repository layout
 
 ```
+app/                 # Expo Router screens
+components/          # Shared UI components
+contexts/            # React contexts (settings, identity)
+convex/              # Convex schema + functions
+hooks/               # React hooks
+i18n/                # Localization
+lib/                 # Client utilities (deviceId, dates, money, entitlements)
+assets/              # Images/fonts
+```
 
-- **Expo Router** drives screens via file structure in `/apps/native/app`. :contentReference[oaicite:25]{index=25}
-- **NativeWind** provides Tailwind classes; Metro is configured with `withNativeWind`. :contentReference[oaicite:26]{index=26}
+## Technology
+- Expo (React Native) + Expo Router
+- Convex for backend
+- Clerk for auth
+- StyleSheet for styling
 
-## 2) Technology choices
-- **Mobile**: Expo (React Native), **Expo Router**, **NativeWind**, `expo-secure-store` for device secrets.
-- **Auth**: **Clerk Expo SDK**.
-- **Backend**: **Convex** (queries, mutations, actions, http actions).
-- **Banking**: **Plaid Link RN SDK** + **Transactions Sync** + Webhooks.
-- **Push**: **expo-notifications** + Expo Push Service.
-- **Charts**: `victory-native` + `react-native-svg`.
-- **i18n**: `i18next` + `react-i18next` + `expo-localization`.
-
-Docs: Expo Router, NativeWind setup, Clerk Expo, Convex HTTP Actions, Plaid Link RN, Transactions Sync, Expo push. :contentReference[oaicite:27]{index=27}
-
-## 3) App module boundaries
-
-**apps/native**
-- `app/` — routes (tabs: Home, Transactions, Budgets, Insights, AskAI, Settings)
-- `components/` — presentation components
-- `features/` — feature folders (e.g., `features/budget`, `features/transactions`)
-- `lib/` — client utils (Convex client wrapper, i18n init, theme)
-- `styles/` — `global.css`, Tailwind config bridge
-- `hooks/` — React hooks for client logic
-
-**packages/backend (Convex)**
-- `schema.ts` — tables & indexes
-- `auth/` — Clerk session verification, user provisioning
-- `plaid/` — `create_link_token`, `exchange_public_token`, `transactions_sync`
-- `http.ts` — `/webhooks/plaid` HTTP Action
-- `notifications/` — Expo push Action
-- `ai/` — OpenAI “Ask-AI” Action
-- `budgets/`, `transactions/` — domain queries/mutations
-
-**packages/shared**
-- `types.ts` — shared TS types
-- `schemas.ts` — zod schemas for inputs/DTOs
-- `constants.ts` — constants (categories, colors, flags)
-
-## 4) Coding patterns
-
-### Frontend (Expo + NativeWind)
-- Use **file-based routing**; each screen loads data via Convex queries.
-- Style with **NativeWind** classes; keep components small & composable. :contentReference[oaicite:28]{index=28}
-- Localization: wrap strings with `t('...')`; store resources under `apps/native/i18n`.
-- Push: request permissions, store ExpoPushToken in Convex; display in-app notification feed. :contentReference[oaicite:29]{index=29}
-
-### Backend (Convex)
-- Keep **queries** pure/read-only; **mutations** for writes; **actions** for external I/O (Plaid, OpenAI, Push). :contentReference[oaicite:30]{index=30}
-- **HTTP Actions** only for webhooks/public endpoints; proxy to internal actions/queries. :contentReference[oaicite:31]{index=31}
-- Actions that use Node-only libs should include `"use node"`. :contentReference[oaicite:32]{index=32}
-- Use indexes and avoid scanning large collections; follow Convex **Best Practices**. :contentReference[oaicite:33]{index=33}
-
-### Banking (Plaid)
-- Link flow: server creates `link_token` → client opens Link → on success, server exchanges `public_token`. Use **RN Link SDK**. :contentReference[oaicite:34]{index=34}
-- Call `/transactions/sync` **once** per Item to begin webhooks. Then on `SYNC_UPDATES_AVAILABLE`, fetch deltas and update DB. :contentReference[oaicite:35]{index=35}
-
-## 5) Security & privacy guidelines
-- Secrets (Plaid, OpenAI) live in Convex env. 
-- Device stores only session & benign prefs (SecureStore).
-- Log redaction for PII; never log tokens.
-- Idempotency for webhook processing (store event IDs).
-
-## 6) Definition of Done (DoD) for features
-- Types & schemas added to `packages/shared`.
-- Convex functions typed and validated; auth checks in place.
-- Screens are translated (`en` at minimum) and themed (light/dark).
-- Tests and a **Test Plan** provided.
-- Screenshots/GIFs for UI PRs.
-
-## 7) Build/development notes
-- Using native modules (Plaid) requires **prebuild/development builds**. Don’t rely on Expo Go for those features. :contentReference[oaicite:36]{index=36}
-- Use Expo Router docs for navigation patterns & params typing. :contentReference[oaicite:37]{index=37}
+## Patterns
+- All data is scoped by `ownerType` + `ownerId` (device or user).
+- Anonymous mode disables Plaid + AI features.
+- Use Convex queries for reads, mutations for writes, actions for external I/O.
 

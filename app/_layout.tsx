@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider as NavThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -11,6 +11,38 @@ import * as SecureStore from 'expo-secure-store'
 import { ConvexReactClient } from 'convex/react';
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { SettingsProvider, useSettings } from '@/contexts/SettingsContext';
+import { IdentityProvider } from '@/contexts/IdentityContext';
+import { LocalDbProvider } from '@/contexts/LocalDbContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
+import { resolveTheme } from '@/constants/themes';
+import type { ColorScheme } from '@/constants/themes';
+
+// Google Fonts — we load every weight referenced in any theme definition
+import { Lora_700Bold } from '@expo-google-fonts/lora';
+import {
+  SourceSans3_400Regular,
+  SourceSans3_600SemiBold,
+} from '@expo-google-fonts/source-sans-3';
+import { Nunito_700Bold } from '@expo-google-fonts/nunito';
+import {
+  Karla_400Regular,
+  Karla_700Bold,
+} from '@expo-google-fonts/karla';
+import { Sora_700Bold } from '@expo-google-fonts/sora';
+import {
+  DMSans_400Regular,
+  DMSans_500Medium,
+} from '@expo-google-fonts/dm-sans';
+import { Fraunces_700Bold } from '@expo-google-fonts/fraunces';
+import {
+  Outfit_400Regular,
+  Outfit_600SemiBold,
+} from '@expo-google-fonts/outfit';
+import { SpaceGrotesk_700Bold } from '@expo-google-fonts/space-grotesk';
+import {
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+} from '@expo-google-fonts/jetbrains-mono';
 
 // Create a Convex client
 const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL;
@@ -60,9 +92,29 @@ SplashScreen.preventAutoHideAsync();
 
 function InnerApp() {
   const colorScheme = useColorScheme();
-  const { theme } = useSettings();
+  const { theme, brandTheme } = useSettings();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    // Classic
+    Lora_700Bold,
+    SourceSans3_400Regular,
+    SourceSans3_600SemiBold,
+    // Ocean
+    Nunito_700Bold,
+    Karla_400Regular,
+    Karla_700Bold,
+    // Ember
+    Sora_700Bold,
+    DMSans_400Regular,
+    DMSans_500Medium,
+    // Botanical
+    Fraunces_700Bold,
+    Outfit_400Regular,
+    Outfit_600SemiBold,
+    // Noir
+    SpaceGrotesk_700Bold,
+    JetBrainsMono_400Regular,
+    JetBrainsMono_500Medium,
   });
 
   React.useEffect(() => {
@@ -75,51 +127,39 @@ function InnerApp() {
     return null;
   }
 
-  const effectiveTheme = theme === 'system' ? (colorScheme === 'dark' ? DarkTheme : DefaultTheme) : (theme === 'dark' ? DarkTheme : DefaultTheme);
+  const effectiveScheme: ColorScheme =
+    theme === 'system'
+      ? (colorScheme === 'dark' ? 'dark' : 'light')
+      : (theme === 'dark' ? 'dark' : 'light');
+
+  const effectiveNavTheme = effectiveScheme === 'dark' ? DarkTheme : DefaultTheme;
+  const resolvedAppTheme = resolveTheme(brandTheme, effectiveScheme);
 
   return (
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-        <ClerkLoaded>
-          <ThemeProvider value={effectiveTheme}>
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-              <Stack.Screen name="+not-found" />
-              <Stack.Screen name="(screens)/family" options={{
-                title: "Family",
-                contentStyle: { backgroundColor: 'white' }
-              }} />
-              <Stack.Screen name="(screens)/new-workout" options={{
-                title: "New workout",
-                contentStyle: {
-                  backgroundColor: "white"
-                }
-              }} />
-              <Stack.Screen name="(screens)/log-reps/[workoutId]" options={{
-                title: "Log reps",
-                contentStyle: {
-                  backgroundColor: "white",
-                  paddingTop: 8
-                }
-              }} />
-              <Stack.Screen name="(screens)/edit-workout/[workoutId]" options={{
-                title: "Edit workout",
-                contentStyle: {
-                  backgroundColor: "white",
-                  paddingTop: 8
-                }
-              }} />
-              <Stack.Screen name="(screens)/edit-entry/[entryId]" options={{
-                title: "Edit entry",
-                contentStyle: {
-                  backgroundColor: "white",
-                  paddingTop: 8
-                }
-              }} />
-            </Stack>
-          </ThemeProvider>
-        </ClerkLoaded>
+        <IdentityProvider>
+          <ClerkLoaded>
+            <ThemeProvider theme={resolvedAppTheme}>
+              <NavThemeProvider value={effectiveNavTheme}>
+                <Stack>
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                  <Stack.Screen name="+not-found" />
+                  <Stack.Screen name="(screens)/accounts" options={{ title: "Accounts" }} />
+                  <Stack.Screen name="(screens)/receipts" options={{ title: "Receipts" }} />
+                  <Stack.Screen name="(screens)/receipt/[receiptId]" options={{ title: "Receipt" }} />
+                  <Stack.Screen name="(screens)/categories" options={{ title: "Categories" }} />
+                  <Stack.Screen name="(screens)/budget-allocate/[categoryId]" options={{ title: "Allocate budget" }} />
+                  <Stack.Screen name="(screens)/recipes" options={{ title: "Recipes" }} />
+                  <Stack.Screen name="(screens)/meal-plan" options={{ title: "Meal plan" }} />
+                  <Stack.Screen name="(screens)/shopping-list" options={{ title: "Shopping list" }} />
+                  <Stack.Screen name="(screens)/pantry" options={{ title: "Pantry" }} />
+                </Stack>
+              </NavThemeProvider>
+            </ThemeProvider>
+          </ClerkLoaded>
+        </IdentityProvider>
       </ConvexProviderWithClerk>
     </ClerkProvider>
   );
@@ -128,7 +168,9 @@ function InnerApp() {
 export default function RootLayout() {
   return (
     <SettingsProvider>
-      <InnerApp />
+      <LocalDbProvider>
+        <InnerApp />
+      </LocalDbProvider>
     </SettingsProvider>
   );
 }

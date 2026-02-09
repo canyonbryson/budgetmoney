@@ -1,23 +1,78 @@
 import React from 'react'
 import { StyleProp, TouchableOpacity, ViewStyle, StyleSheet, Text } from 'react-native';
+import { useAppTheme } from '@/hooks/useAppTheme';
 
 type Props = {
   onPress: () => void
   children: React.ReactNode | string,
   disabled?: boolean
   style?: StyleProp<ViewStyle>
+  variant?: 'primary' | 'secondary' | 'outline' | 'accent' | 'ghost'
+  size?: 'sm' | 'md'
 }
 
-function Button({ onPress, children, disabled }: Props) {
+function Button({ onPress, children, disabled, style, variant = 'primary', size = 'md' }: Props) {
+  const { colors, borderRadius, typography, shadows, spacing } = useAppTheme();
+
+  const bg = (() => {
+    switch (variant) {
+      case 'secondary': return colors.primaryMuted;
+      case 'accent': return colors.accent;
+      case 'outline': return 'transparent';
+      case 'ghost': return 'transparent';
+      default: return colors.primary;
+    }
+  })();
+
+  const border = (() => {
+    switch (variant) {
+      case 'secondary': return colors.primary;
+      case 'accent': return colors.accent;
+      case 'outline': return colors.border;
+      case 'ghost': return 'transparent';
+      default: return colors.primary;
+    }
+  })();
+
+  const textColor = (() => {
+    switch (variant) {
+      case 'secondary': return colors.primary;
+      case 'accent': return colors.textOnPrimary;
+      case 'outline': return colors.text;
+      case 'ghost': return colors.primary;
+      default: return colors.textOnPrimary;
+    }
+  })();
+
+  const paddingV = size === 'sm' ? spacing.xs + 2 : spacing.sm + 2;
+  const paddingH = size === 'sm' ? spacing.md : spacing.lg;
+
   return (
     <TouchableOpacity
-      style={!disabled ? styles.button : {
-        ...styles.button,
-        ...styles.disabled
-      }}
+      style={[
+        styles.button,
+        {
+          backgroundColor: bg,
+          borderColor: border,
+          borderRadius: borderRadius.md,
+          paddingVertical: paddingV,
+          paddingHorizontal: paddingH,
+          ...(variant !== 'ghost' ? shadows.sm : {}),
+        },
+        disabled ? styles.disabled : null,
+        style,
+      ]}
       onPress={onPress}
       disabled={disabled}>
-      <Text style={styles.text}>
+      <Text style={[
+        styles.text,
+        {
+          color: textColor,
+          fontFamily: typography.bodySemiBold.fontFamily,
+          fontWeight: typography.bodySemiBold.fontWeight,
+          fontSize: size === 'sm' ? 13 : typography.bodySemiBold.fontSize,
+        },
+      ]}>
         { children }
       </Text>
     </TouchableOpacity>
@@ -28,30 +83,15 @@ export default Button
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: 6,
-    padding: 8,
-    backgroundColor: "rgb(47, 48, 55)",
-    borderColor: "rgb(47, 48, 55)",
     borderWidth: 1,
-    fontSize: 14,
-    fontWeight: "bold",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "rgba(0, 0, 0, 0.07)",
-    shadowOffset: {
-      height: 1,
-      width: 1
-    },
-    shadowRadius: 5
   },
   disabled: {
     opacity: 0.4,
-    borderColor: "rgba(47, 48, 55, 0.5)",
   },
   text: {
-    color: "white",
-    fontWeight: "bold",
     display: "flex",
     gap: 2,
     justifyContent: "center",

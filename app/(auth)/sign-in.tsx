@@ -1,18 +1,23 @@
 import { useSignIn } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
-import { Text, View, ActivityIndicator, TextInput } from 'react-native'
+import { Text, View, ActivityIndicator, TextInput, StyleSheet } from 'react-native'
 import React from 'react'
 import Button from '@/components/Button'
 import OAuthButton from '@/components/OAuthButton'
 import MaterialCommunityIcons from '@expo/vector-icons/build/MaterialCommunityIcons'
 import { ThemedText } from '@/components/ThemedText'
 import { ThemedView } from '@/components/ThemedView'
-import { styles } from "@/constants/styles"
+import ScreenWrapper from '@/components/ScreenWrapper'
 import { Ionicons } from '@expo/vector-icons'
+import { useSettings } from '@/contexts/SettingsContext'
+import { useAppTheme } from '@/hooks/useAppTheme'
+import { t } from '@/i18n'
 
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn()
   const router = useRouter()
+  const { language } = useSettings()
+  const { colors, spacing, borderRadius } = useAppTheme()
 
   const [emailAddress, setEmailAddress] = React.useState('')
   const [password, setPassword] = React.useState('')
@@ -43,20 +48,24 @@ export default function SignInScreen() {
   }, [isLoaded, emailAddress, password])
 
   if(!isLoaded) {
-    return <ActivityIndicator size="large" />
+    return (
+      <ScreenWrapper style={styles.authScreen}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </ScreenWrapper>
+    )
   }
 
   return (
-    <View style={styles.authScreen}>
-      <View style={styles.authForm}>
+    <ScreenWrapper style={styles.authScreen}>
+      <View style={[styles.authForm, { padding: spacing.lg + 2, gap: spacing.sm }]}>
 
         {/* Header text */}
-        <ThemedView style={{ marginVertical: 16, alignItems: "center" }}>
+        <ThemedView style={{ marginVertical: spacing.lg, alignItems: "center" }}>
           <ThemedText type='title'>
-            Sign into Daily Reps
+            {t(language, 'appName')}
           </ThemedText>
           <ThemedText type='default'>
-            Welcome back! Please sign in to continue
+            {t(language, 'signIn')}
           </ThemedText>
         </ThemedView>
 
@@ -64,7 +73,7 @@ export default function SignInScreen() {
         <View style={{
           display: "flex",
           flexDirection: "row",
-          gap: 8
+          gap: spacing.sm
         }}>
           <View style={{ flex: 1 }}>
             <OAuthButton strategy="oauth_google">
@@ -76,26 +85,28 @@ export default function SignInScreen() {
 
         {/* Form separator */}
         <View style={{flexDirection: 'row', alignItems: 'center'}}>
-          <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+          <View style={{flex: 1, height: 1, backgroundColor: colors.borderLight}} />
           <View>
-            <Text style={{width: 50, textAlign: 'center', color: "#555"}}>or</Text>
+            <Text style={{width: 50, textAlign: 'center', color: colors.textMuted}}>or</Text>
           </View>
-          <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+          <View style={{flex: 1, height: 1, backgroundColor: colors.borderLight}} />
         </View>
 
         {/* Input fields */}
-        <View style={{ gap: 8, marginBottom: 24 }}>
-          <Text>Email address</Text>
+        <View style={{ gap: spacing.sm, marginBottom: spacing.xl }}>
+          <ThemedText>{t(language, 'email')}</ThemedText>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
             autoCapitalize="none"
+            placeholderTextColor={colors.textMuted}
             value={emailAddress}
             onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
           />
-          <Text>Password</Text>
+          <ThemedText>{t(language, 'password')}</ThemedText>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
             value={password}
+            placeholderTextColor={colors.textMuted}
             secureTextEntry={true}
             onChangeText={(password) => setPassword(password)}
           />
@@ -103,7 +114,7 @@ export default function SignInScreen() {
 
         {/* Sign in button */}
         <Button onPress={onSignInPress}>
-          <Text>Sign in</Text> <Ionicons name='caret-forward' />
+          <Text>{t(language, 'signIn')}</Text> <Ionicons name='caret-forward' />
         </Button>
 
         {/* Suggest new users create an account */}
@@ -112,15 +123,36 @@ export default function SignInScreen() {
           flexDirection: "row",
           gap: 4,
           justifyContent: "center",
-          marginVertical: 18
+          marginVertical: spacing.lg + 2
         }}>
-          <Text>Don't have an account?</Text>
+          <ThemedText>{t(language, 'dontHaveAccount')}</ThemedText>
           <Link href="/sign-up">
-            <Text style={{ fontWeight: "bold" }}>Sign up</Text>
+            <ThemedText style={{ fontWeight: "bold" }}>{t(language, 'signUp')}</ThemedText>
           </Link>
         </View>
 
       </View>
-    </View>
+    </ScreenWrapper>
   )
 }
+
+const styles = StyleSheet.create({
+  authScreen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  authForm: {
+    display: "flex",
+    width: "100%",
+  },
+  input: {
+    height: 40,
+    borderWidth: 1,
+    padding: 10,
+  },
+})

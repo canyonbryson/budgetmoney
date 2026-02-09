@@ -1,57 +1,66 @@
-import { Redirect, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { TabBarIcon } from '@/components/navigation/TabBarIcon';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-// Import the `useAuth` hook from Clerk
-import { useAuth } from '@clerk/clerk-expo';
+import { useAppTheme } from '@/hooks/useAppTheme';
 import { useSettings } from '@/contexts/SettingsContext';
 import { t } from '@/i18n';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { colors } = useAppTheme();
   const { language } = useSettings();
-    // Redirect if the user is not signed in
-    const { isSignedIn } = useAuth()
-    if(!isSignedIn) {
-      return (
-        <Redirect href={'/sign-in'} />
-      )
-    }
-
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: colors.tint,
+        tabBarInactiveTintColor: colors.tabIconDefault,
+        tabBarStyle: { backgroundColor: colors.backgroundCard },
         headerShown: false,
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: t(language, 'home'),
+          title: t(language, 'dashboard'),
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'home' : 'home-outline'} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="ask-ai"
+        name="budgets"
         options={{
-          title: t(language, 'askAi'),
+          title: t(language, 'budgets'),
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'chatbubble' : 'chatbubble-outline'} color={color} />
+            <TabBarIcon name={focused ? 'wallet' : 'wallet-outline'} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="history"
+        name="transactions"
         options={{
-          // Keep route for backwards compat but hide it
-          href: null,
-          title: 'Hidden',
-          tabBarButton: () => null,
+          title: t(language, 'transactions'),
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name={focused ? 'list' : 'list-outline'} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="receipts"
+        options={{
+          title: t(language, 'receipts'),
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name={focused ? 'receipt' : 'receipt-outline'} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="meals"
+        options={{
+          title: t(language, 'meals'),
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name={focused ? 'restaurant' : 'restaurant-outline'} color={color} />
+          ),
         }}
       />
       <Tabs.Screen

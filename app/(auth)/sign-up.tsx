@@ -1,18 +1,22 @@
 import React from 'react'
-import { View, Text } from 'react-native'
+import { View, Text, StyleSheet, TextInput } from 'react-native'
 import { useSignUp } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
-import { styles } from '@/constants/styles'
 import Button from '@/components/Button'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { ThemedView } from '@/components/ThemedView'
 import { ThemedText } from '@/components/ThemedText'
 import OAuthButton from '@/components/OAuthButton'
-import { TextInput } from 'react-native'
+import ScreenWrapper from '@/components/ScreenWrapper'
+import { useSettings } from '@/contexts/SettingsContext'
+import { useAppTheme } from '@/hooks/useAppTheme'
+import { t } from '@/i18n'
 
 export default function SignUpScreen() {
   const { isLoaded, signUp, setActive } = useSignUp()
   const router = useRouter()
+  const { language } = useSettings()
+  const { colors, spacing, borderRadius } = useAppTheme()
 
   const [emailAddress, setEmailAddress] = React.useState('')
   const [password, setPassword] = React.useState('')
@@ -62,23 +66,23 @@ export default function SignUpScreen() {
   }
 
   return (
-    <View style={styles.authScreen}>
-      <View style={styles.authForm}>
+    <ScreenWrapper style={styles.authScreen}>
+      <View style={[styles.authForm, { padding: spacing.lg + 2, gap: spacing.sm }]}>
         {!pendingVerification && (
           <>
-            <ThemedView style={{ marginVertical: 16, alignItems: "center" }}>
-              <ThemedText type='title'>
-                Create your account
-              </ThemedText>
-              <ThemedText type='default'>
-                Welcome! Please fill in the details to get started.
-              </ThemedText>
+            <ThemedView style={{ marginVertical: spacing.lg, alignItems: "center" }}>
+            <ThemedText type='title'>
+              {t(language, 'signUp')}
+            </ThemedText>
+            <ThemedText type='default'>
+              {t(language, 'appName')}
+            </ThemedText>
             </ThemedView>
 
             <View style={{
               display: "flex",
               flexDirection: "row",
-              gap: 8
+              gap: spacing.sm
             }}>
               <View style={{ flex: 1 }}>
                 <OAuthButton strategy="oauth_google">
@@ -89,29 +93,31 @@ export default function SignUpScreen() {
             </View>
 
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
-              <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+              <View style={{flex: 1, height: 1, backgroundColor: colors.borderLight}} />
               <View>
-                <Text style={{width: 50, textAlign: 'center'}}>or</Text>
+                <Text style={{width: 50, textAlign: 'center', color: colors.textMuted}}>or</Text>
               </View>
-              <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+              <View style={{flex: 1, height: 1, backgroundColor: colors.borderLight}} />
             </View>
 
-            <Text>Email address</Text>
+            <ThemedText>{t(language, 'email')}</ThemedText>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
               autoCapitalize="none"
+              placeholderTextColor={colors.textMuted}
               value={emailAddress}
               onChangeText={(email) => setEmailAddress(email)}
             />
-            <Text>Password</Text>
+            <ThemedText>{t(language, 'password')}</ThemedText>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
               value={password}
+              placeholderTextColor={colors.textMuted}
               secureTextEntry={true}
               onChangeText={(password) => setPassword(password)}
             />
             <Button onPress={onSignUpPress}>
-              <Text>Continue</Text> <Ionicons name='caret-forward' />
+              <Text>{t(language, 'continue')}</Text> <Ionicons name='caret-forward' />
             </Button>
 
             <View style={{
@@ -119,31 +125,52 @@ export default function SignUpScreen() {
               flexDirection: "row",
               gap: 4,
               justifyContent: "center",
-              marginVertical: 18
+              marginVertical: spacing.lg + 2
             }}>
-              <Text>Already have an account?</Text>
+              <ThemedText>{t(language, 'alreadyHaveAccount')}</ThemedText>
               <Link href="/sign-in">
-                <Text style={{ fontWeight: "bold" }}>Sign in</Text>
+                <ThemedText style={{ fontWeight: "bold" }}>{t(language, 'signIn')}</ThemedText>
               </Link>
             </View>
           </>
         )}
 
-        {/* If the user has submitted credentials, render a verification form instead */}
         {pendingVerification && (
           <>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
               value={code}
-              placeholder="Code..."
+              placeholder={t(language, 'codePlaceholder')}
+              placeholderTextColor={colors.textMuted}
               onChangeText={(code) => setCode(code)} />
             <Button onPress={onPressVerify}>
-              Verify code
+              {t(language, 'verifyCode')}
             </Button>
           </>
         )}
 
       </View>
-    </View>
+    </ScreenWrapper>
   )
 }
+
+const styles = StyleSheet.create({
+  authScreen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  authForm: {
+    display: "flex",
+    width: "100%",
+  },
+  input: {
+    height: 40,
+    borderWidth: 1,
+    padding: 10,
+  },
+})

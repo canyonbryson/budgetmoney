@@ -1,49 +1,61 @@
 import React from 'react';
 import * as SecureStore from 'expo-secure-store';
+import type { ThemeId } from '@/constants/themes';
+import { DEFAULT_THEME_ID, themeIds } from '@/constants/themes';
 
 type ThemePreference = 'system' | 'light' | 'dark';
 type LanguageCode = 'en' | 'es' | 'zh-cn';
 
 type Settings = {
   theme: ThemePreference;
+  brandTheme: ThemeId;
   language: LanguageCode;
 };
 
 type SettingsContextValue = Settings & {
   setTheme: (theme: ThemePreference) => Promise<void>;
+  setBrandTheme: (brandTheme: ThemeId) => Promise<void>;
   setLanguage: (language: LanguageCode) => Promise<void>;
   isLoaded: boolean;
 };
 
 const DEFAULT_SETTINGS: Settings = {
-  theme: 'system',
+  theme: 'light',
+  brandTheme: DEFAULT_THEME_ID,
   language: 'en',
 };
 
 const THEME_KEY = 'settings:theme';
+const BRAND_THEME_KEY = 'settings:brandTheme';
 const LANGUAGE_KEY = 'settings:language';
 
 export const SettingsContext = React.createContext<SettingsContextValue>({
   ...DEFAULT_SETTINGS,
   setTheme: async () => {},
+  setBrandTheme: async () => {},
   setLanguage: async () => {},
   isLoaded: false,
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<ThemePreference>(DEFAULT_SETTINGS.theme);
+  const [brandTheme, setBrandThemeState] = React.useState<ThemeId>(DEFAULT_SETTINGS.brandTheme);
   const [language, setLanguageState] = React.useState<LanguageCode>(DEFAULT_SETTINGS.language);
   const [isLoaded, setIsLoaded] = React.useState(false);
 
   React.useEffect(() => {
     (async () => {
       try {
-        const [storedTheme, storedLanguage] = await Promise.all([
+        const [storedTheme, storedBrandTheme, storedLanguage] = await Promise.all([
           SecureStore.getItemAsync(THEME_KEY),
+          SecureStore.getItemAsync(BRAND_THEME_KEY),
           SecureStore.getItemAsync(LANGUAGE_KEY),
         ]);
         if (storedTheme === 'system' || storedTheme === 'light' || storedTheme === 'dark') {
           setThemeState(storedTheme);
+        }
+        if (storedBrandTheme && (themeIds as string[]).includes(storedBrandTheme)) {
+          setBrandThemeState(storedBrandTheme as ThemeId);
         }
         if (storedLanguage === 'en' || storedLanguage === 'es' || storedLanguage === 'zh-cn') {
           setLanguageState(storedLanguage);
@@ -61,6 +73,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, []);
 
+  const setBrandTheme = React.useCallback(async (next: ThemeId) => {
+    setBrandThemeState(next);
+    try {
+      await SecureStore.setItemAsync(BRAND_THEME_KEY, next);
+    } catch {}
+  }, []);
+
   const setLanguage = React.useCallback(async (next: LanguageCode) => {
     setLanguageState(next);
     try {
@@ -70,11 +89,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const value = React.useMemo<SettingsContextValue>(() => ({
     theme,
+    brandTheme,
     language,
     setTheme,
+    setBrandTheme,
     setLanguage,
     isLoaded,
-  }), [theme, language, setTheme, setLanguage, isLoaded]);
+  }), [theme, brandTheme, language, setTheme, setBrandTheme, setLanguage, isLoaded]);
 
   return (
     <SettingsContext.Provider value={value}>
@@ -86,5 +107,3 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 export function useSettings() {
   return React.useContext(SettingsContext);
 }
-
-

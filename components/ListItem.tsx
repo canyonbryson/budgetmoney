@@ -1,6 +1,7 @@
 import React from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { useAppTheme } from '@/hooks/useAppTheme'
 
 type Props = {
   children: React.ReactNode
@@ -8,16 +9,27 @@ type Props = {
 }
 
 function ListItem({ children, onPress }: Props) {
+  const { colors, borderRadius, spacing, shadows } = useAppTheme();
+
   return (
     <Pressable
-      style={styles.pressable}
+      style={[
+        styles.pressable,
+        {
+          borderRadius: borderRadius.lg,
+          padding: spacing.lg,
+          borderColor: colors.borderLight,
+          backgroundColor: colors.backgroundCard,
+          ...shadows.sm,
+        },
+      ]}
       onPress={onPress}
     >
       <View style={styles.outer}>
         <View style={styles.inner}>
           { children }
         </View>
-        <Ionicons size={22} name='chevron-forward' style={styles.icon} />
+        <Ionicons size={20} name='chevron-forward' color={colors.textMuted} />
       </View>
     </Pressable>
   )
@@ -27,19 +39,13 @@ export default ListItem
 
 const styles = StyleSheet.create({
   pressable: {
-    borderRadius: 6,
-    padding: 12,
-    borderColor: "#ddd",
     borderWidth: 1,
-    color: "#111",
-    fontSize: 14,
-    fontWeight: "bold"
   },
   outer: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8
+    gap: 10
   },
   inner: {
     display: "flex",
@@ -47,7 +53,4 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     flex: 1
   },
-  icon: {
-    color: "#aaa"
-  }
 })

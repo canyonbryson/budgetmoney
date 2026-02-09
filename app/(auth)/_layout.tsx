@@ -4,12 +4,14 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { TabBarIcon } from '@/components/navigation/TabBarIcon';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { useSettings } from '@/contexts/SettingsContext';
+import { t } from '@/i18n';
 
 export default function AuthRoutesLayout() {
-  const colorScheme = useColorScheme();
+  const { colors } = useAppTheme();
   const { isSignedIn } = useAuth()
+  const { language } = useSettings();
 
   if (isSignedIn) {
     return <Redirect href={'/'} />
@@ -18,16 +20,15 @@ export default function AuthRoutesLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: colors.tint,
+        tabBarInactiveTintColor: colors.tabIconDefault,
+        tabBarStyle: { backgroundColor: colors.backgroundCard },
         headerShown: false
-      }}
-      sceneContainerStyle={{
-        backgroundColor: "white"
       }}>
       <Tabs.Screen
         name="sign-in"
         options={{
-          title: 'Sign in',
+          title: t(language, 'signIn'),
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'person' : 'person-outline'} color={color} />
           ),
@@ -37,7 +38,7 @@ export default function AuthRoutesLayout() {
       <Tabs.Screen
         name="sign-up"
         options={{
-          title: 'Sign up',
+          title: t(language, 'signUp'),
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'person-add' : 'person-add-outline'} color={color} />
           ),
