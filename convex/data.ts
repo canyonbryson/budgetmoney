@@ -28,6 +28,8 @@ export const clearAll = mutation({
     await removeAll('merchantRules');
     await removeAll('categories');
     await removeAll('budgets');
+    await removeAll('budgetCycleSnapshots');
+    await removeAll('budgetCategoryCycleSnapshots');
     await removeAll('budgetSettings');
     await removeAll('receipts');
     await removeAll('receiptLineItems');
@@ -43,5 +45,8 @@ export const clearAll = mutation({
     await removeAll('itemPrices');
     await removeAll('notificationSettings');
     await removeAll('creditCards');
+    await removeAll('netWorthBuckets');
+    await removeAll('netWorthSnapshots');
+    await removeAll('devices');
   },
 });

@@ -1,4 +1,9 @@
-import { getCategoryDisplayName, getSettingsForQuery } from '../budgets';
+import {
+  buildCategoryKindSets,
+  getCategoryDisplayName,
+  getSettingsForQuery,
+  summarizeTransactionTotalsByKind,
+} from '../budgets';
 
 describe('getCategoryDisplayName', () => {
   it('falls back to label or default when name missing', () => {
@@ -28,6 +33,29 @@ describe('getSettingsForQuery', () => {
     await expect(getSettingsForQuery(ctx, owner, now)).resolves.toEqual({
       cycleLengthDays: 30,
       anchorDate: expectedAnchor,
+      monthlyIncome: 0,
     });
+  });
+});
+
+describe('summarizeTransactionTotalsByKind', () => {
+  it('tracks expense spending separately from income', () => {
+    const kindSets = buildCategoryKindSets([
+      { _id: 'cat_expense', name: 'Groceries', categoryKind: 'expense' },
+      { _id: 'cat_income', name: 'Income', categoryKind: 'income' },
+      { _id: 'cat_transfer', name: 'Transfer', categoryKind: 'transfer' },
+    ]);
+    const totals = summarizeTransactionTotalsByKind(
+      [
+        { categoryId: 'cat_expense', amount: 200 },
+        { categoryId: 'cat_income', amount: 1800 },
+        { categoryId: 'cat_transfer', amount: 300 },
+      ],
+      kindSets
+    );
+
+    expect(totals.expenseTotal).toBe(200);
+    expect(totals.incomeTotal).toBe(1800);
+    expect(totals.transferTotal).toBe(300);
   });
 });

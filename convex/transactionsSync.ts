@@ -5,6 +5,8 @@ import { ownerArgs, resolveOwner } from './ownership';
 import { categorizeTransaction } from './categorize';
 import { Owner } from './ownership';
 import { callOpenAIJson } from './openai';
+import { ensureDefaultIncomeCategoryForOwner } from './categories';
+import { getCategoryKind } from './categoryKinds';
 
 async function upsertTransactions(
   ctx: any,
@@ -25,6 +27,7 @@ async function upsertTransactions(
   }>
 ) {
   const now = Date.now();
+  await ensureDefaultIncomeCategoryForOwner(ctx, owner);
   const categories: Doc<'categories'>[] = await ctx.db
     .query('categories')
     .filter((q: any) =>
@@ -36,6 +39,14 @@ async function upsertTransactions(
       .filter((cat) => typeof cat.name === 'string')
       .map((cat) => [String(cat.name).toLowerCase(), String(cat._id)])
   );
+  const categoryByKind = new Map<string, string>();
+  for (const category of categories) {
+    if (category.parentId) continue;
+    const kind = getCategoryKind(category);
+    if (!categoryByKind.has(kind)) {
+      categoryByKind.set(kind, String(category._id));
+    }
+  }
   const categoryById = new Map(categories.map((cat) => [String(cat._id), cat]));
   const categoryByNameLookup = new Map(
     categories
@@ -76,6 +87,7 @@ async function upsertTransactions(
       },
       {
         categoryByName,
+        categoryByKind,
       }
     );
 

@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "grocerybudget",
+    "scheme": "budgetmoney",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/splash.png",
@@ -16,16 +16,19 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Allow GroceryBudget to capture receipt photos."
-      }
+      },
+      "bundleIdentifier": "com.canyonortho.grocerybudget"
     },
     "android": {
       "permissions": [
+        "CAMERA",
         "CAMERA"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.canyonortho.grocerybudget"
     },
     "web": {
       "bundler": "metro",
@@ -40,6 +43,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "edd91464-c29f-4ff6-b1a3-90d1d81c16f7"
+      }
     }
   }
 }

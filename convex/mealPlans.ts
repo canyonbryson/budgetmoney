@@ -9,7 +9,18 @@ import {
   roundQuantity,
   type UnitKind,
 } from './lib/normalize';
+import {
+  mergeShoppingListWithAi,
+  type ShoppingListMergeItemDraft,
+} from './ai/shoppingList';
+import {
+  finalizePricingFromEvidence,
+  estimatePricingWithAi,
+  type PricingEvidenceInput,
+  type PriceSource,
+} from './ai/pricing';
 import { lookupSpoonacularPrice } from './priceProviders/spoonacular';
+import { lookupWincoPrice } from './priceProviders/winco';
 
 function getWeekStart(date = new Date()) {
   const d = new Date(date);
@@ -24,8 +35,26 @@ function formatDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function getCandidateWeekStarts(date = new Date()) {
+  const base = new Date(date);
+  base.setHours(0, 0, 0, 0);
+  const candidates: string[] = [];
+  for (let daysBack = 0; daysBack < 7; daysBack += 1) {
+    const d = new Date(base);
+    d.setDate(base.getDate() - daysBack);
+    candidates.push(formatDate(d));
+  }
+  return candidates;
+}
+
 function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function isFeatureEnabled(value: string | undefined, enabledWhenMissing = true) {
+  if (!value) return enabledWhenMissing;
+  const normalized = value.trim().toLowerCase();
+  return normalized !== 'false' && normalized !== '0' && normalized !== 'off';
 }
 
 function normalizePrice(value: number, unit?: 'cents' | 'dollars') {
@@ -33,33 +62,385 @@ function normalizePrice(value: number, unit?: 'cents' | 'dollars') {
   return value;
 }
 
+function estimateCostFromUnitPrice(
+  unitPrice: number,
+  quantity?: number | null,
+  unit?: string | null
+) {
+  const normalized = normalizeQuantity(quantity, unit);
+  if (normalized.quantity === undefined) return roundCurrency(unitPrice);
+
+  let multiplier = 1;
+  if (normalized.kind === 'count') {
+    multiplier = Math.max(1, Math.ceil(normalized.quantity));
+  } else if (normalized.kind === 'volume' || normalized.kind === 'mass') {
+    multiplier = Math.max(1, Math.ceil(normalized.quantity / 500));
+  }
+
+  return roundCurrency(unitPrice * Math.min(multiplier, 6));
+}
+
+function normalizePriceSource(source: PriceSource): 'receipt' | 'online' | 'winco' | 'ai' {
+  if (source === 'receipt' || source === 'winco' || source === 'ai') return source;
+  return 'online';
+}
+
+export function resolveShoppingWeekStart(weekStart?: string) {
+  return weekStart ?? formatDate(getWeekStart());
+}
+
+async function resolveCurrentPlanWeekStart(
+  ctx: any,
+  owner: { ownerType: 'user' | 'device' | 'family'; ownerId: string }
+) {
+  const candidates = getCandidateWeekStarts();
+  for (const candidate of candidates) {
+    const plan = await ctx.db
+      .query('mealPlans')
+      .withIndex('by_owner_week', (q: any) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', candidate)
+      )
+      .first();
+    if (plan) return candidate;
+  }
+  return resolveShoppingWeekStart();
+}
+
+async function listShoppingListItemsForWeekData(
+  ctx: any,
+  owner: { ownerType: 'user' | 'device' | 'family'; ownerId: string },
+  weekStart: string
+) {
+  const plan = await ctx.db
+    .query('mealPlans')
+    .withIndex('by_owner_week', (q: any) =>
+      q
+        .eq('ownerType', owner.ownerType)
+        .eq('ownerId', owner.ownerId)
+        .eq('weekStart', weekStart)
+    )
+    .first();
+
+  if (!plan) return [] as Doc<'shoppingListItems'>[];
+
+  return (await ctx.db
+    .query('shoppingListItems')
+    .withIndex('by_plan', (q: any) => q.eq('mealPlanId', plan._id))
+    .collect()) as Doc<'shoppingListItems'>[];
+}
+
+async function getShoppingListForWeekData(
+  ctx: any,
+  owner: { ownerType: 'user' | 'device' | 'family'; ownerId: string },
+  weekStart: string
+) {
+  const items = await listShoppingListItemsForWeekData(ctx, owner, weekStart);
+
+  const pantryItems = await ctx.db
+    .query('pantryItems')
+    .filter((q: any) =>
+      q.and(
+        q.eq(q.field('ownerType'), owner.ownerType),
+        q.eq(q.field('ownerId'), owner.ownerId)
+      )
+    )
+    .collect();
+
+  type PantryAggregate = {
+    quantity: number;
+    unit?: string;
+    kind: UnitKind;
+    hasUnknownQuantity: boolean;
+  };
+
+  const pantryIndex = new Map<string, Map<string, PantryAggregate>>();
+  const pantryKey = (kind: UnitKind, unit?: string) =>
+    kind === 'unknown' ? `unknown:${unit ?? ''}` : kind;
+
+  for (const pantryItem of pantryItems) {
+    const normalizedName = normalizeItemName(pantryItem.name);
+    if (!normalizedName) continue;
+    const normalized = normalizeQuantity(pantryItem.quantity, pantryItem.unit);
+    const key = pantryKey(normalized.kind, normalized.unit);
+    const byKind = pantryIndex.get(normalizedName) ?? new Map<string, PantryAggregate>();
+    const current = byKind.get(key) ?? {
+      quantity: 0,
+      unit: normalized.unit,
+      kind: normalized.kind,
+      hasUnknownQuantity: false,
+    };
+
+    if (normalized.quantity === undefined) {
+      current.hasUnknownQuantity = true;
+    } else {
+      current.quantity = roundQuantity(current.quantity + normalized.quantity);
+    }
+
+    byKind.set(key, current);
+    pantryIndex.set(normalizedName, byKind);
+  }
+
+  const enrichedItems = items.map((item) => {
+    const normalizedName = normalizeItemName(item.itemName);
+    const normalized = normalizeQuantity(item.quantity, item.unit);
+    const byKind = normalizedName ? pantryIndex.get(normalizedName) : undefined;
+    let pantryMatch: PantryAggregate | undefined;
+
+    if (byKind) {
+      if (normalized.kind !== 'unknown') {
+        pantryMatch = byKind.get(normalized.kind);
+      }
+      if (!pantryMatch) {
+        pantryMatch = Array.from(byKind.values())[0];
+      }
+    }
+
+    let inPantry = false;
+    let coverage: 'none' | 'partial' | 'full' | 'unknown' = 'none';
+    let remainingQuantity: number | undefined;
+    let remainingUnit: string | undefined;
+    let pantryQuantity: number | undefined;
+    let pantryUnit: string | undefined;
+
+    if (pantryMatch) {
+      inPantry = true;
+      pantryUnit = pantryMatch.unit;
+      pantryQuantity = pantryMatch.hasUnknownQuantity ? undefined : pantryMatch.quantity;
+
+      if (
+        pantryMatch.hasUnknownQuantity ||
+        normalized.quantity === undefined ||
+        pantryMatch.kind !== normalized.kind
+      ) {
+        coverage = 'unknown';
+      } else {
+        const remaining = roundQuantity(normalized.quantity - pantryMatch.quantity);
+        if (remaining <= 0) {
+          coverage = 'full';
+        } else {
+          coverage = 'partial';
+          remainingQuantity = remaining;
+          remainingUnit = normalized.unit;
+        }
+      }
+    }
+
+    return {
+      ...item,
+      inPantry,
+      coverage,
+      remainingQuantity,
+      remainingUnit,
+      pantryQuantity,
+      pantryUnit,
+    };
+  });
+
+  const total = items.reduce((sum, item) => sum + (item.estimatedCost ?? 0), 0);
+  return {
+    weekStart,
+    items: enrichedItems,
+    totalEstimatedCost: roundCurrency(total),
+  };
+}
+
 export const getCurrentWeek = query({
   args: ownerArgs,
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const weekStart = formatDate(getWeekStart());
+    const weekStartCandidates = getCandidateWeekStarts();
+    let plan: Doc<'mealPlans'> | null = null;
+    let weekStart = weekStartCandidates[0];
 
-    const plan = await ctx.db
-      .query('mealPlans')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('weekStart'), weekStart)
+    for (const candidate of weekStartCandidates) {
+      const candidatePlan = await ctx.db
+        .query('mealPlans')
+        .withIndex('by_owner_week', (q) =>
+          q
+            .eq('ownerType', owner.ownerType)
+            .eq('ownerId', owner.ownerId)
+            .eq('weekStart', candidate)
         )
-      )
-      .first();
+        .first();
+      if (candidatePlan) {
+        plan = candidatePlan;
+        weekStart = candidate;
+        break;
+      }
+    }
 
     if (!plan) {
-      return { weekStart, items: [] as any[] };
+      return { weekStart, planningMode: undefined, items: [] as any[] };
     }
 
     const items = await ctx.db
       .query('mealPlanItems')
-      .filter((q) => q.eq(q.field('mealPlanId'), plan._id))
+      .withIndex('by_plan', (q) => q.eq('mealPlanId', plan._id))
       .collect();
 
-    return { weekStart, items };
+    return { weekStart, planningMode: plan.planningMode, items };
+  },
+});
+
+export const getWeekPlan = query({
+  args: {
+    ...ownerArgs,
+    weekStart: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+
+    const plan = await ctx.db
+      .query('mealPlans')
+      .withIndex('by_owner_week', (q) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', args.weekStart)
+      )
+      .first();
+
+    if (!plan) {
+      return { weekStart: args.weekStart, planningMode: undefined, items: [] as any[] };
+    }
+
+    const items = await ctx.db
+      .query('mealPlanItems')
+      .withIndex('by_plan', (q) => q.eq('mealPlanId', plan._id))
+      .collect();
+
+    return { weekStart: args.weekStart, planningMode: plan.planningMode, items };
+  },
+});
+
+export const batchAddMealPlanItems = mutation({
+  args: {
+    ...ownerArgs,
+    weekStart: v.string(),
+    planningMode: v.optional(v.union(v.literal('all'), v.literal('lunchDinner'), v.literal('dinnerOnly'))),
+    items: v.array(
+      v.object({
+        title: v.string(),
+        day: v.string(),
+        slot: v.optional(v.string()),
+        recipeId: v.optional(v.id('recipes')),
+        notes: v.optional(v.string()),
+        mealType: v.optional(v.union(
+          v.literal('recipe'),
+          v.literal('leftovers'),
+          v.literal('eatOut'),
+          v.literal('skip'),
+          v.literal('other')
+        )),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const now = Date.now();
+
+    let plan = await ctx.db
+      .query('mealPlans')
+      .withIndex('by_owner_week', (q) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', args.weekStart)
+      )
+      .first();
+
+    if (!plan) {
+      const id = await ctx.db.insert('mealPlans', {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        weekStart: args.weekStart,
+        planningMode: args.planningMode,
+        createdAt: now,
+        updatedAt: now,
+      });
+      plan = await ctx.db.get(id);
+    } else {
+      await ctx.db.patch(plan._id, {
+        planningMode: args.planningMode ?? plan.planningMode,
+        updatedAt: now,
+      });
+    }
+
+    if (!plan) throw new Error('Meal plan not found');
+
+    for (const item of args.items) {
+      // Replace existing item for the same day+slot if present
+      const existing = await ctx.db
+        .query('mealPlanItems')
+        .withIndex('by_plan', (q) => q.eq('mealPlanId', plan!._id))
+        .filter((q) =>
+          q.and(
+            q.eq(q.field('day'), item.day),
+            q.eq(q.field('slot'), item.slot)
+          )
+        )
+        .first();
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          title: item.title,
+          recipeId: item.recipeId,
+          notes: item.notes,
+          mealType: item.mealType,
+        });
+      } else {
+        await ctx.db.insert('mealPlanItems', {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          mealPlanId: plan._id,
+          title: item.title,
+          day: item.day,
+          slot: item.slot,
+          recipeId: item.recipeId,
+          notes: item.notes,
+          mealType: item.mealType,
+        });
+      }
+    }
+
+    await ctx.db.patch(plan._id, { updatedAt: now });
+    return { planId: plan._id };
+  },
+});
+
+export const clearWeekMealPlanItems = mutation({
+  args: {
+    ...ownerArgs,
+    weekStart: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+
+    const plan = await ctx.db
+      .query('mealPlans')
+      .withIndex('by_owner_week', (q) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', args.weekStart)
+      )
+      .first();
+
+    if (!plan) return;
+
+    const items = await ctx.db
+      .query('mealPlanItems')
+      .withIndex('by_plan', (q) => q.eq('mealPlanId', plan._id))
+      .collect();
+
+    for (const item of items) {
+      await ctx.db.delete(item._id);
+    }
+
+    await ctx.db.patch(plan._id, { updatedAt: Date.now() });
   },
 });
 
@@ -67,151 +448,56 @@ export const getShoppingListCurrentWeek = query({
   args: ownerArgs,
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const weekStart = formatDate(getWeekStart());
+    const weekStart = await resolveCurrentPlanWeekStart(ctx, owner);
+    return await getShoppingListForWeekData(ctx, owner, weekStart);
+  },
+});
 
-    const plan = await ctx.db
-      .query('mealPlans')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('weekStart'), weekStart)
-        )
-      )
-      .first();
-
-    if (!plan) {
-      return { weekStart, items: [], totalEstimatedCost: 0 };
-    }
-
-    const items = await ctx.db
-      .query('shoppingListItems')
-      .withIndex('by_plan', (q) => q.eq('mealPlanId', plan._id))
-      .collect();
-
-    const pantryItems = await ctx.db
-      .query('pantryItems')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId)
-        )
-      )
-      .collect();
-
-    type PantryAggregate = {
-      quantity: number;
-      unit?: string;
-      kind: UnitKind;
-      hasUnknownQuantity: boolean;
-    };
-
-    const pantryIndex = new Map<string, Map<string, PantryAggregate>>();
-    const pantryKey = (kind: UnitKind, unit?: string) =>
-      kind === 'unknown' ? `unknown:${unit ?? ''}` : kind;
-
-    for (const pantryItem of pantryItems) {
-      const normalizedName = normalizeItemName(pantryItem.name);
-      if (!normalizedName) continue;
-      const normalized = normalizeQuantity(pantryItem.quantity, pantryItem.unit);
-      const key = pantryKey(normalized.kind, normalized.unit);
-      const byKind = pantryIndex.get(normalizedName) ?? new Map<string, PantryAggregate>();
-      const current = byKind.get(key) ?? {
-        quantity: 0,
-        unit: normalized.unit,
-        kind: normalized.kind,
-        hasUnknownQuantity: false,
-      };
-
-      if (normalized.quantity === undefined) {
-        current.hasUnknownQuantity = true;
-      } else {
-        current.quantity = roundQuantity(current.quantity + normalized.quantity);
-      }
-
-      byKind.set(key, current);
-      pantryIndex.set(normalizedName, byKind);
-    }
-
-    const enrichedItems = items.map((item) => {
-      const normalizedName = normalizeItemName(item.itemName);
-      const normalized = normalizeQuantity(item.quantity, item.unit);
-      const byKind = normalizedName ? pantryIndex.get(normalizedName) : undefined;
-      let pantryMatch: PantryAggregate | undefined;
-
-      if (byKind) {
-        if (normalized.kind !== 'unknown') {
-          pantryMatch = byKind.get(normalized.kind);
-        }
-        if (!pantryMatch) {
-          pantryMatch = Array.from(byKind.values())[0];
-        }
-      }
-
-      let inPantry = false;
-      let coverage: 'none' | 'partial' | 'full' | 'unknown' = 'none';
-      let remainingQuantity: number | undefined;
-      let remainingUnit: string | undefined;
-      let pantryQuantity: number | undefined;
-      let pantryUnit: string | undefined;
-
-      if (pantryMatch) {
-        inPantry = true;
-        pantryUnit = pantryMatch.unit;
-        pantryQuantity = pantryMatch.hasUnknownQuantity ? undefined : pantryMatch.quantity;
-
-        if (
-          pantryMatch.hasUnknownQuantity ||
-          normalized.quantity === undefined ||
-          pantryMatch.kind !== normalized.kind
-        ) {
-          coverage = 'unknown';
-        } else {
-          const remaining = roundQuantity(normalized.quantity - pantryMatch.quantity);
-          if (remaining <= 0) {
-            coverage = 'full';
-          } else {
-            coverage = 'partial';
-            remainingQuantity = remaining;
-            remainingUnit = normalized.unit;
-          }
-        }
-      }
-
-      return {
-        ...item,
-        inPantry,
-        coverage,
-        remainingQuantity,
-        remainingUnit,
-        pantryQuantity,
-        pantryUnit,
-      };
-    });
-
-    const total = items.reduce((sum, item) => sum + (item.estimatedCost ?? 0), 0);
-    return {
-      weekStart,
-      items: enrichedItems,
-      totalEstimatedCost: roundCurrency(total),
-    };
+export const getShoppingListForWeek = query({
+  args: {
+    ...ownerArgs,
+    weekStart: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const weekStart = resolveShoppingWeekStart(args.weekStart);
+    return await getShoppingListForWeekData(ctx, owner, weekStart);
   },
 });
 
 export const generateShoppingListInternal = mutation({
   args: ownerArgs,
+  handler: async (ctx, args): Promise<{ planId: Id<'mealPlans'> }> => {
+    const owner = await resolveOwner(ctx, args);
+    const weekStart = await resolveCurrentPlanWeekStart(ctx, owner);
+    const result: { planId: Id<'mealPlans'> } = await ctx.runMutation(
+      api.mealPlans.generateShoppingListInternalForWeek,
+      {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        weekStart,
+      }
+    );
+    return result;
+  },
+});
+
+export const generateShoppingListInternalForWeek = mutation({
+  args: {
+    ...ownerArgs,
+    weekStart: v.string(),
+  },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const weekStart = formatDate(getWeekStart());
+    const weekStart = resolveShoppingWeekStart(args.weekStart);
     const now = Date.now();
     let plan = await ctx.db
       .query('mealPlans')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('weekStart'), weekStart)
-        )
+      .withIndex('by_owner_week', (q) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', weekStart)
       )
       .first();
 
@@ -363,10 +649,15 @@ export const generateShoppingListInternal = mutation({
       aggregated.set(key, current);
     };
 
-    const planItems = await ctx.db
+    const allPlanItems = await ctx.db
       .query('mealPlanItems')
       .filter((q) => q.eq(q.field('mealPlanId'), plan!._id))
       .collect();
+
+    // Only include recipe items (or items with no mealType, for backwards compat) in the shopping list
+    const planItems = allPlanItems.filter(
+      (item) => !item.mealType || item.mealType === 'recipe'
+    );
 
     for (const item of planItems) {
       if (item.recipeId) {
@@ -408,10 +699,7 @@ export const generateShoppingListInternal = mutation({
       let latestPriceValue = latestPrice?.price;
 
       if (latestPriceValue !== undefined && latestPriceValue !== null) {
-        estimatedCost =
-          quantity === undefined
-            ? roundCurrency(latestPriceValue)
-            : roundCurrency(latestPriceValue * quantity);
+        estimatedCost = estimateCostFromUnitPrice(latestPriceValue, quantity, item.unit);
         priceSource = 'receipt';
       }
 
@@ -437,25 +725,157 @@ export const listShoppingListItemsInternal = query({
   args: ownerArgs,
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const weekStart = formatDate(getWeekStart());
+    const weekStart = await resolveCurrentPlanWeekStart(ctx, owner);
+    return await listShoppingListItemsForWeekData(ctx, owner, weekStart);
+  },
+});
 
-    const plan = await ctx.db
+export const listShoppingListItemsForWeekInternal = query({
+  args: {
+    ...ownerArgs,
+    weekStart: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const weekStart = resolveShoppingWeekStart(args.weekStart);
+    return await listShoppingListItemsForWeekData(ctx, owner, weekStart);
+  },
+});
+
+export const replaceShoppingListItemsForWeek = mutation({
+  args: {
+    ...ownerArgs,
+    weekStart: v.string(),
+    items: v.array(
+      v.object({
+        itemName: v.string(),
+        quantity: v.optional(v.number()),
+        unit: v.optional(v.string()),
+        canonicalName: v.optional(v.string()),
+        canonicalItemId: v.optional(v.id('canonicalItems')),
+        estimatedCost: v.optional(v.number()),
+        priceSource: v.optional(
+          v.union(v.literal('receipt'), v.literal('online'), v.literal('winco'), v.literal('ai'))
+        ),
+        estimateConfidence: v.optional(v.number()),
+        estimateSourceDetail: v.optional(v.string()),
+        estimateRationale: v.optional(v.string()),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const weekStart = resolveShoppingWeekStart(args.weekStart);
+    const now = Date.now();
+
+    let plan = await ctx.db
       .query('mealPlans')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('weekStart'), weekStart)
-        )
+      .withIndex('by_owner_week', (q) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', weekStart)
       )
       .first();
 
-    if (!plan) return [];
+    if (!plan) {
+      const planId = await ctx.db.insert('mealPlans', {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        weekStart,
+        createdAt: now,
+        updatedAt: now,
+      });
+      plan = await ctx.db.get(planId);
+    }
 
-    return await ctx.db
+    if (!plan) {
+      throw new Error('Meal plan not found');
+    }
+
+    const existingItems = await ctx.db
       .query('shoppingListItems')
       .withIndex('by_plan', (q) => q.eq('mealPlanId', plan._id))
       .collect();
+    for (const existingItem of existingItems) {
+      await ctx.db.delete(existingItem._id);
+    }
+
+    const canonicalItems = await ctx.db
+      .query('canonicalItems')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('ownerType'), owner.ownerType),
+          q.eq(q.field('ownerId'), owner.ownerId)
+        )
+      )
+      .collect();
+    const canonicalIndex = new Map<string, (typeof canonicalItems)[number]>();
+
+    const indexCanonicalItem = (item: (typeof canonicalItems)[number]) => {
+      const names = [item.name, ...(item.aliases ?? [])];
+      for (const name of names) {
+        const normalized = normalizeItemName(name);
+        if (normalized) canonicalIndex.set(normalized, item);
+      }
+    };
+    for (const item of canonicalItems) indexCanonicalItem(item);
+
+    const resolveCanonicalItemId = async (item: (typeof args.items)[number]) => {
+      if (item.canonicalItemId) return item.canonicalItemId;
+
+      const candidates = [item.canonicalName, item.itemName]
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value && value.length > 0));
+
+      for (const candidate of candidates) {
+        const normalized = normalizeItemName(candidate);
+        if (!normalized) continue;
+        const existing = canonicalIndex.get(normalized);
+        if (existing) return existing._id;
+      }
+
+      const canonicalName = item.canonicalName?.trim() || item.itemName.trim();
+      if (!canonicalName.length) return undefined;
+      const aliases =
+        canonicalName !== item.itemName.trim() && item.itemName.trim().length
+          ? [item.itemName.trim()]
+          : undefined;
+
+      const canonicalId = await ctx.db.insert('canonicalItems', {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        name: canonicalName,
+        aliases,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const created = await ctx.db.get(canonicalId);
+      if (created) indexCanonicalItem(created);
+      return canonicalId;
+    };
+
+    for (const item of args.items) {
+      const trimmedName = item.itemName.trim();
+      if (!trimmedName.length) continue;
+      const canonicalItemId = await resolveCanonicalItemId(item);
+
+      await ctx.db.insert('shoppingListItems', {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        mealPlanId: plan._id,
+        canonicalItemId,
+        itemName: trimmedName,
+        quantity: item.quantity,
+        unit: item.unit,
+        estimatedCost: item.estimatedCost,
+        priceSource: item.priceSource,
+        estimateConfidence: item.estimateConfidence,
+        estimateSourceDetail: item.estimateSourceDetail,
+        estimateRationale: item.estimateRationale,
+        isChecked: false,
+      });
+    }
   },
 });
 
@@ -467,6 +887,13 @@ export const applyShoppingListOnlinePrice = mutation({
     estimatedCost: v.number(),
     unitPrice: v.number(),
     currency: v.optional(v.string()),
+    priceSource: v.optional(
+      v.union(v.literal('receipt'), v.literal('online'), v.literal('winco'), v.literal('ai'))
+    ),
+    estimateConfidence: v.optional(v.number()),
+    estimateSourceDetail: v.optional(v.string()),
+    estimateRationale: v.optional(v.string()),
+    persistPriceRecord: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
@@ -477,18 +904,21 @@ export const applyShoppingListOnlinePrice = mutation({
 
     await ctx.db.patch(args.itemId, {
       estimatedCost: args.estimatedCost,
-      priceSource: 'online',
+      priceSource: args.priceSource ?? 'online',
+      estimateConfidence: args.estimateConfidence,
+      estimateSourceDetail: args.estimateSourceDetail,
+      estimateRationale: args.estimateRationale,
     });
 
     const canonicalItemId = args.canonicalItemId ?? item.canonicalItemId;
-    if (canonicalItemId) {
+    if (canonicalItemId && args.persistPriceRecord !== false) {
       await ctx.db.insert('itemPrices', {
         ownerType: owner.ownerType,
         ownerId: owner.ownerId,
         canonicalItemId,
         price: args.unitPrice,
         currency: args.currency ?? 'USD',
-        source: 'online',
+        source: args.priceSource ?? 'online',
         isEstimated: true,
         purchasedAt: Date.now(),
       });
@@ -496,75 +926,389 @@ export const applyShoppingListOnlinePrice = mutation({
   },
 });
 
+export const addShoppingListItem = mutation({
+  args: {
+    ...ownerArgs,
+    weekStart: v.optional(v.string()),
+    itemName: v.string(),
+    quantity: v.optional(v.number()),
+    unit: v.optional(v.string()),
+    estimatedCost: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const weekStart = resolveShoppingWeekStart(args.weekStart);
+    const now = Date.now();
+
+    let plan = await ctx.db
+      .query('mealPlans')
+      .withIndex('by_owner_week', (q) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', weekStart)
+      )
+      .first();
+
+    if (!plan) {
+      const planId = await ctx.db.insert('mealPlans', {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        weekStart,
+        createdAt: now,
+        updatedAt: now,
+      });
+      plan = await ctx.db.get(planId);
+    }
+
+    if (!plan) {
+      throw new Error('Meal plan not found');
+    }
+
+    const trimmedName = args.itemName.trim();
+    if (!trimmedName.length) {
+      throw new Error('Item name is required');
+    }
+
+    await ctx.db.insert('shoppingListItems', {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      mealPlanId: plan._id,
+      itemName: trimmedName,
+      quantity: args.quantity,
+      unit: args.unit,
+      estimatedCost: args.estimatedCost,
+      isChecked: false,
+    });
+  },
+});
+
 export const generateShoppingList = action({
-  args: ownerArgs,
+  args: {
+    ...ownerArgs,
+    weekStart: v.optional(v.string()),
+  },
   handler: async (
     ctx,
     args
   ): Promise<{ status: 'ok'; planId: Id<'mealPlans'>; onlineLookups: number }> => {
     const owner = await resolveOwner(ctx, args);
+    const currentWeek: { weekStart: string; planningMode?: string; items: any[] } =
+      await ctx.runQuery(api.mealPlans.getCurrentWeek, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+      });
+    const weekStart = args.weekStart ?? currentWeek.weekStart;
     const { planId }: { planId: Id<'mealPlans'> } = await ctx.runMutation(
-      api.mealPlans.generateShoppingListInternal,
-      args
+      api.mealPlans.generateShoppingListInternalForWeek,
+      {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        weekStart,
+      }
     );
 
-    let canLookup = true;
+    let canUsePaidFeatures = true;
     try {
       await requireSignedIn(ctx);
     } catch {
-      canLookup = false;
+      canUsePaidFeatures = false;
     }
 
-    const base =
+    let items: Doc<'shoppingListItems'>[] = await ctx.runQuery(
+      api.mealPlans.listShoppingListItemsForWeekInternal,
+      {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        weekStart,
+      }
+    );
+
+    const aiMergeEnabled =
+      canUsePaidFeatures &&
+      isFeatureEnabled(process.env.AI_SHOPPING_LIST_V2_ENABLED, true) &&
+      Boolean(process.env.OPENAI_API_KEY);
+    const aiModel =
+      process.env.OPENAI_SHOPPING_LIST_MODEL ??
+      process.env.OPENAI_PRICE_MODEL ??
+      process.env.OPENAI_MODEL ??
+      'gpt-4o-mini';
+
+    if (aiMergeEnabled && items.length) {
+      const weekPlan: { weekStart: string; planningMode?: string; items: any[] } =
+        await ctx.runQuery(api.mealPlans.getWeekPlan, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          weekStart,
+        });
+
+      const recipeIds = Array.from(
+        new Set(
+          (weekPlan.items ?? [])
+            .filter((item) => !item.mealType || item.mealType === 'recipe')
+            .map((item) => item.recipeId)
+            .filter((recipeId): recipeId is Id<'recipes'> => Boolean(recipeId))
+        )
+      );
+
+      const recipeDetailById = new Map<Id<'recipes'>, { ingredients: Array<any> }>();
+      for (const recipeId of recipeIds) {
+        const detail = await ctx.runQuery(api.recipes.getDetail, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          recipeId,
+        });
+        if (detail) {
+          recipeDetailById.set(recipeId, { ingredients: detail.ingredients ?? [] });
+        }
+      }
+
+      const canonicalItems: Doc<'canonicalItems'>[] = await ctx.runQuery(
+        api.receipts.listCanonicalItemsInternal,
+        {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+        }
+      );
+      const pantryItems: Doc<'pantryItems'>[] = await ctx.runQuery(api.pantry.list, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+      });
+
+      const mergedDraft = await mergeShoppingListWithAi({
+        model: aiModel,
+        context: {
+          weekStart,
+          draftItems: items.map((item) => ({
+            itemName: item.itemName,
+            quantity: item.quantity ?? undefined,
+            unit: item.unit ?? undefined,
+          })),
+          meals: (weekPlan.items ?? [])
+            .filter((item) => !item.mealType || item.mealType === 'recipe')
+            .map((item) => {
+              const recipeIngredients = item.recipeId
+                ? recipeDetailById.get(item.recipeId as Id<'recipes'>)?.ingredients ?? []
+                : [];
+              return {
+                day: item.day,
+                slot: item.slot,
+                title: item.title,
+                ingredients:
+                  recipeIngredients.length > 0
+                    ? recipeIngredients.map((ingredient) => ({
+                        name: ingredient.name,
+                        quantity: ingredient.quantity ?? undefined,
+                        unit: ingredient.unit ?? undefined,
+                      }))
+                    : [{ name: item.title }],
+              };
+            }),
+          canonicalNames: canonicalItems
+            .map((item) => item.name)
+            .filter((name): name is string => Boolean(name))
+            .slice(0, 250),
+          pantryItems: pantryItems.map((item) => ({
+            name: item.name,
+            quantity: item.quantity ?? undefined,
+            unit: item.unit ?? undefined,
+          })),
+        },
+        fallbackDraft: items.map((item) => ({
+          itemName: item.itemName,
+          quantity: item.quantity ?? undefined,
+          unit: item.unit ?? undefined,
+        })),
+      });
+
+      if (mergedDraft.length) {
+        const originalByName = new Map<string, Id<'canonicalItems'>>();
+        for (const item of items) {
+          const normalized = normalizeItemName(item.itemName);
+          if (normalized && item.canonicalItemId && !originalByName.has(normalized)) {
+            originalByName.set(normalized, item.canonicalItemId);
+          }
+        }
+
+        await ctx.runMutation(api.mealPlans.replaceShoppingListItemsForWeek, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          weekStart,
+          items: mergedDraft.map((item: ShoppingListMergeItemDraft) => ({
+            itemName: item.itemName,
+            quantity: item.quantity,
+            unit: item.unit,
+            canonicalItemId: (() => {
+              const normalized = normalizeItemName(item.itemName);
+              if (!normalized) return undefined;
+              return originalByName.get(normalized);
+            })(),
+          })),
+        });
+
+        items = await ctx.runQuery(api.mealPlans.listShoppingListItemsForWeekInternal, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          weekStart,
+        });
+      }
+    }
+
+    const spoonacularBase =
       process.env.SPOONACULAR_BASE_URL ??
       process.env.PRICE_LOOKUP_BASE_URL ??
       'https://api.spoonacular.com';
-    const key = process.env.SPOONACULAR_API_KEY ?? process.env.PRICE_LOOKUP_API_KEY;
+    const spoonacularKey = process.env.SPOONACULAR_API_KEY ?? process.env.PRICE_LOOKUP_API_KEY;
     const priceUnitRaw =
       process.env.SPOONACULAR_PRICE_UNIT ?? process.env.PRICE_LOOKUP_PRICE_UNIT;
     const priceUnit =
       priceUnitRaw === 'cents' || priceUnitRaw === 'dollars' ? priceUnitRaw : undefined;
 
-    if (!canLookup || !key) {
+    const wincoEnabled =
+      canUsePaidFeatures &&
+      isFeatureEnabled(process.env.WINCO_LOOKUP_ENABLED, false) &&
+      Boolean(process.env.WINCO_LOOKUP_BASE_URL);
+    const wincoBaseUrl = process.env.WINCO_LOOKUP_BASE_URL;
+    const wincoApiKey = process.env.WINCO_LOOKUP_API_KEY;
+    const wincoStoreId = process.env.WINCO_STORE_ID;
+
+    if (!canUsePaidFeatures) {
       return { status: 'ok', planId, onlineLookups: 0 };
     }
 
-    const items: Doc<'shoppingListItems'>[] = await ctx.runQuery(
-      api.mealPlans.listShoppingListItemsInternal,
-      args
-    );
-    const missing = items.filter((item) => !item.estimatedCost);
-    const maxLookups = 12;
+    const pricingInputs: PricingEvidenceInput[] = [];
     let onlineLookups = 0;
 
-    for (const item of missing.slice(0, maxLookups)) {
-      try {
-        const result = await lookupSpoonacularPrice(item.itemName, {
-          apiKey: key,
-          baseUrl: base,
-          priceUnit,
-        });
-        if (result.price === undefined || result.price === null) continue;
-        const unitPrice = normalizePrice(result.price, result.priceUnit);
-        if (unitPrice === undefined) continue;
-        const estimatedCost =
-          item.quantity === undefined
-            ? roundCurrency(unitPrice)
-            : roundCurrency(unitPrice * item.quantity);
+    for (const item of items) {
+      const evidence: PricingEvidenceInput['evidence'] = {};
 
-        await ctx.runMutation(api.mealPlans.applyShoppingListOnlinePrice, {
+      if (item.canonicalItemId) {
+        const latest = await ctx.runQuery(api.prices.getLatestPurchasePrice, {
           ownerType: owner.ownerType,
           ownerId: owner.ownerId,
-          itemId: item._id,
-          canonicalItemId: item.canonicalItemId ?? undefined,
-          estimatedCost,
-          unitPrice,
-          currency: result.currency ?? 'USD',
+          canonicalItemId: item.canonicalItemId,
         });
-        onlineLookups += 1;
-      } catch {
-        // Ignore lookup failures and continue.
+        if (latest?.price !== undefined && latest?.price !== null) {
+          evidence.receiptUnitPrice = latest.price;
+        } else {
+          const fallback = await ctx.runQuery(api.prices.getForItem, {
+            ownerType: owner.ownerType,
+            ownerId: owner.ownerId,
+            canonicalItemId: item.canonicalItemId,
+          });
+          if (fallback?.price !== undefined && fallback?.price !== null) {
+            if (fallback.source === 'winco') {
+              evidence.wincoUnitPrice = fallback.price;
+            } else if (fallback.source === 'receipt' && !fallback.isEstimated) {
+              evidence.receiptUnitPrice = fallback.price;
+            } else {
+              evidence.onlineUnitPrice = fallback.price;
+            }
+          }
+        }
       }
+
+      if (
+        evidence.receiptUnitPrice === undefined &&
+        evidence.wincoUnitPrice === undefined &&
+        wincoEnabled &&
+        wincoBaseUrl
+      ) {
+        try {
+          const winco = await lookupWincoPrice(item.itemName, {
+            baseUrl: wincoBaseUrl,
+            apiKey: wincoApiKey,
+            storeId: wincoStoreId,
+            priceUnit,
+          });
+          if (winco.price !== undefined && winco.price !== null) {
+            evidence.wincoUnitPrice = normalizePrice(winco.price, winco.priceUnit);
+            onlineLookups += 1;
+          }
+        } catch {
+          // Ignore WinCo lookup failures.
+        }
+      }
+
+      if (
+        evidence.receiptUnitPrice === undefined &&
+        evidence.wincoUnitPrice === undefined &&
+        evidence.onlineUnitPrice === undefined &&
+        spoonacularKey
+      ) {
+        try {
+          const result = await lookupSpoonacularPrice(item.itemName, {
+            apiKey: spoonacularKey,
+            baseUrl: spoonacularBase,
+            priceUnit,
+          });
+          if (result.price !== undefined && result.price !== null) {
+            evidence.onlineUnitPrice = normalizePrice(result.price, result.priceUnit);
+            onlineLookups += 1;
+          }
+        } catch {
+          // Ignore fallback lookup failures.
+        }
+      }
+
+      pricingInputs.push({
+        itemName: item.itemName,
+        canonicalName: item.itemName,
+        quantity: item.quantity ?? undefined,
+        unit: item.unit ?? undefined,
+        evidence,
+      });
+    }
+
+    const aiPricingEnabled =
+      canUsePaidFeatures &&
+      isFeatureEnabled(process.env.AI_PRICE_ESTIMATE_V2_ENABLED, true) &&
+      Boolean(process.env.OPENAI_API_KEY);
+    const pricing = aiPricingEnabled
+      ? await estimatePricingWithAi({
+          model: aiModel,
+          contextLabel: `shopping_list_${weekStart}`,
+          inputs: pricingInputs,
+        })
+      : finalizePricingFromEvidence(pricingInputs);
+
+    const estimateIndex = new Map<string, (typeof pricing.items)[number]>();
+    for (const estimate of pricing.items) {
+      const normalizedName = normalizeItemName(estimate.itemName) || estimate.itemName.toLowerCase();
+      const normalizedUnit = (estimate.unit ?? '').toLowerCase();
+      estimateIndex.set(`${normalizedName}:${normalizedUnit}`, estimate);
+      estimateIndex.set(normalizedName, estimate);
+    }
+
+    for (const item of items) {
+      const normalizedName = normalizeItemName(item.itemName) || item.itemName.toLowerCase();
+      const normalizedUnit = (item.unit ?? '').toLowerCase();
+      const estimate =
+        estimateIndex.get(`${normalizedName}:${normalizedUnit}`) ?? estimateIndex.get(normalizedName);
+      if (!estimate || estimate.estimatedCost === undefined) continue;
+
+      const unitPrice = estimate.unitPrice ?? estimate.estimatedCost;
+      if (unitPrice === undefined) continue;
+
+      await ctx.runMutation(api.mealPlans.applyShoppingListOnlinePrice, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        itemId: item._id,
+        canonicalItemId: item.canonicalItemId ?? undefined,
+        estimatedCost: estimate.estimatedCost,
+        unitPrice,
+        currency: pricing.currency,
+        priceSource: normalizePriceSource(estimate.source),
+        estimateConfidence: estimate.confidence,
+        estimateSourceDetail:
+          estimate.source === 'winco'
+            ? 'winco'
+            : estimate.source === 'online'
+              ? 'fallback_online'
+              : estimate.source,
+        estimateRationale: estimate.rationale,
+        persistPriceRecord: estimate.source !== 'receipt',
+      });
     }
 
     return { status: 'ok', planId, onlineLookups };
@@ -574,25 +1318,32 @@ export const generateShoppingList = action({
 export const addMealPlanItem = mutation({
   args: {
     ...ownerArgs,
+    weekStart: v.optional(v.string()),
     title: v.string(),
     day: v.string(),
     slot: v.optional(v.string()),
     recipeId: v.optional(v.id('recipes')),
     notes: v.optional(v.string()),
+    mealType: v.optional(v.union(
+      v.literal('recipe'),
+      v.literal('leftovers'),
+      v.literal('eatOut'),
+      v.literal('skip'),
+      v.literal('other')
+    )),
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const weekStart = formatDate(getWeekStart());
+    const weekStart = args.weekStart ?? formatDate(getWeekStart());
     const now = Date.now();
 
     let plan = await ctx.db
       .query('mealPlans')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('weekStart'), weekStart)
-        )
+      .withIndex('by_owner_week', (q) =>
+        q
+          .eq('ownerType', owner.ownerType)
+          .eq('ownerId', owner.ownerId)
+          .eq('weekStart', weekStart)
       )
       .first();
 
@@ -618,6 +1369,7 @@ export const addMealPlanItem = mutation({
       slot: args.slot,
       recipeId: args.recipeId,
       notes: args.notes,
+      mealType: args.mealType,
     });
 
     await ctx.db.patch(plan._id, { updatedAt: now });
@@ -633,6 +1385,13 @@ export const updateMealPlanItem = mutation({
     slot: v.optional(v.string()),
     recipeId: v.optional(v.id('recipes')),
     notes: v.optional(v.string()),
+    mealType: v.optional(v.union(
+      v.literal('recipe'),
+      v.literal('leftovers'),
+      v.literal('eatOut'),
+      v.literal('skip'),
+      v.literal('other')
+    )),
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
@@ -647,6 +1406,7 @@ export const updateMealPlanItem = mutation({
       slot: args.slot,
       recipeId: args.recipeId,
       notes: args.notes,
+      mealType: args.mealType,
     });
   },
 });
@@ -683,6 +1443,51 @@ export const setShoppingListItemChecked = mutation({
       throw new Error('Not authorized');
     }
     await ctx.db.patch(args.itemId, { isChecked: args.isChecked });
+  },
+});
+
+export const updateShoppingListItem = mutation({
+  args: {
+    ...ownerArgs,
+    itemId: v.id('shoppingListItems'),
+    itemName: v.string(),
+    quantity: v.optional(v.number()),
+    unit: v.optional(v.string()),
+    estimatedCost: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const item = await ctx.db.get(args.itemId);
+    if (!item) throw new Error('Shopping list item not found');
+    if (item.ownerType !== owner.ownerType || item.ownerId !== owner.ownerId) {
+      throw new Error('Not authorized');
+    }
+    const trimmedName = args.itemName.trim();
+    if (!trimmedName.length) {
+      throw new Error('Item name is required');
+    }
+    await ctx.db.patch(args.itemId, {
+      itemName: trimmedName,
+      quantity: args.quantity,
+      unit: args.unit,
+      estimatedCost: args.estimatedCost,
+    });
+  },
+});
+
+export const deleteShoppingListItem = mutation({
+  args: {
+    ...ownerArgs,
+    itemId: v.id('shoppingListItems'),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const item = await ctx.db.get(args.itemId);
+    if (!item) throw new Error('Shopping list item not found');
+    if (item.ownerType !== owner.ownerType || item.ownerId !== owner.ownerId) {
+      throw new Error('Not authorized');
+    }
+    await ctx.db.delete(args.itemId);
   },
 });
 

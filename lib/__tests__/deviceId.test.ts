@@ -1,16 +1,16 @@
 import { getOrCreateDeviceId } from '../deviceId';
 
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(),
-  setItemAsync: jest.fn(),
+jest.mock('../secureStore', () => ({
+  secureGetItem: jest.fn(),
+  secureSetItem: jest.fn(),
 }));
 
-const SecureStore = jest.requireMock('expo-secure-store') as {
-  getItemAsync: jest.Mock;
-  setItemAsync: jest.Mock;
+const SecureStore = jest.requireMock('../secureStore') as {
+  secureGetItem: jest.Mock;
+  secureSetItem: jest.Mock;
 };
 
-const DEVICE_ID_KEY = 'grocerybudget:deviceId';
+const DEVICE_ID_KEY = 'grocerybudget.deviceId';
 
 function createLocalStorage() {
   let store: Record<string, string> = {};
@@ -30,8 +30,8 @@ function createLocalStorage() {
 
 describe('getOrCreateDeviceId', () => {
   beforeEach(() => {
-    SecureStore.getItemAsync.mockReset();
-    SecureStore.setItemAsync.mockReset();
+    SecureStore.secureGetItem.mockReset();
+    SecureStore.secureSetItem.mockReset();
     Object.defineProperty(global, 'localStorage', {
       value: createLocalStorage(),
       configurable: true,
@@ -39,7 +39,7 @@ describe('getOrCreateDeviceId', () => {
   });
 
   it('returns the secure store device id when available', async () => {
-    SecureStore.getItemAsync.mockResolvedValue('secure-id');
+    SecureStore.secureGetItem.mockResolvedValue('secure-id');
 
     const value = await getOrCreateDeviceId();
 
@@ -48,7 +48,7 @@ describe('getOrCreateDeviceId', () => {
   });
 
   it('falls back to localStorage when SecureStore errors', async () => {
-    SecureStore.getItemAsync.mockRejectedValue(new Error('no secure store'));
+    SecureStore.secureGetItem.mockRejectedValue(new Error('no secure store'));
     global.localStorage.setItem(DEVICE_ID_KEY, 'local-id');
 
     const value = await getOrCreateDeviceId();
@@ -57,12 +57,12 @@ describe('getOrCreateDeviceId', () => {
   });
 
   it('generates and stores an id when missing', async () => {
-    SecureStore.getItemAsync.mockResolvedValue(null);
-    SecureStore.setItemAsync.mockRejectedValue(new Error('write failed'));
+    SecureStore.secureGetItem.mockResolvedValue(null);
+    SecureStore.secureSetItem.mockResolvedValue(undefined);
 
     const value = await getOrCreateDeviceId();
 
     expect(value).toMatch(/^dev_/);
-    expect(global.localStorage.setItem).toHaveBeenCalledWith(DEVICE_ID_KEY, value);
+    expect(SecureStore.secureSetItem).toHaveBeenCalledWith(DEVICE_ID_KEY, value);
   });
 });

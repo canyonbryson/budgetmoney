@@ -2,7 +2,7 @@ import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
 const ownerFields = {
-  ownerType: v.union(v.literal('device'), v.literal('user')),
+  ownerType: v.union(v.literal('device'), v.literal('user'), v.literal('family')),
   ownerId: v.string(),
 };
 
@@ -14,6 +14,43 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_userId', ['userId']),
 
+  families: defineTable({
+    name: v.string(),
+    createdByUserId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_creator', ['createdByUserId']),
+
+  familyMembers: defineTable({
+    familyId: v.id('families'),
+    userId: v.string(),
+    role: v.union(v.literal('owner'), v.literal('member')),
+    status: v.union(v.literal('active'), v.literal('removed')),
+    invitedByUserId: v.optional(v.string()),
+    joinedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_family_status', ['familyId', 'status'])
+    .index('by_userId_status', ['userId', 'status'])
+    .index('by_family_user', ['familyId', 'userId']),
+
+  familyInvites: defineTable({
+    familyId: v.id('families'),
+    tokenHash: v.string(),
+    invitedEmail: v.optional(v.string()),
+    invitedByUserId: v.string(),
+    status: v.union(v.literal('pending'), v.literal('accepted'), v.literal('revoked'), v.literal('expired')),
+    expiresAt: v.number(),
+    acceptedByUserId: v.optional(v.string()),
+    acceptedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_tokenHash', ['tokenHash'])
+    .index('by_family_status', ['familyId', 'status'])
+    .index('by_invitedEmail_status', ['invitedEmail', 'status']),
+
   userDevices: defineTable({
     deviceId: v.string(),
     ownerType: ownerFields.ownerType,
@@ -24,6 +61,17 @@ export default defineSchema({
   })
     .index('by_device', ['deviceId'])
     .index('by_owner', ['ownerType', 'ownerId']),
+
+  devices: defineTable({
+    deviceId: v.string(),
+    ownerType: ownerFields.ownerType,
+    ownerId: ownerFields.ownerId,
+    onboardingCompletedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_deviceId', ['deviceId'])
+    .index('by_ownerType_ownerId', ['ownerType', 'ownerId']),
 
   plaidItems: defineTable({
     ...ownerFields,
@@ -48,6 +96,17 @@ export default defineSchema({
     type: v.optional(v.string()),
     currentBalance: v.optional(v.number()),
     availableBalance: v.optional(v.number()),
+    netWorthRole: v.optional(
+      v.union(
+        v.literal('checking'),
+        v.literal('savings'),
+        v.literal('investment'),
+        v.literal('liability')
+      )
+    ),
+    includeInBudget: v.optional(v.boolean()),
+    includeInNetWorth: v.optional(v.boolean()),
+    netWorthBucketId: v.optional(v.id('netWorthBuckets')),
     updatedAt: v.number(),
   })
     .index('by_owner', ['ownerType', 'ownerId'])
@@ -62,6 +121,28 @@ export default defineSchema({
     lastSyncStatus: v.optional(v.union(v.literal('success'), v.literal('error'))),
     lastSyncError: v.optional(v.string()),
   }).index('by_item', ['plaidItemIdRef']),
+
+  netWorthBuckets: defineTable({
+    ...ownerFields,
+    name: v.string(),
+    role: v.union(v.literal('savings'), v.literal('investment')),
+    interestRateApr: v.number(),
+    color: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_owner', ['ownerType', 'ownerId']),
+
+  netWorthSnapshots: defineTable({
+    ...ownerFields,
+    asOfDate: v.string(),
+    assetsTotal: v.number(),
+    liabilitiesTotal: v.number(),
+    netWorthTotal: v.number(),
+    checkingTotal: v.number(),
+    savingsTotal: v.number(),
+    investmentTotal: v.number(),
+    createdAt: v.number(),
+  }).index('by_owner_date', ['ownerType', 'ownerId', 'asOfDate']),
 
   transactions: defineTable({
     ...ownerFields,
@@ -107,8 +188,9 @@ export default defineSchema({
   }).index('by_owner_merchant', ['ownerType', 'ownerId', 'normalizedMerchant']),
 
   categories: defineTable({
-    ownerType: v.optional(v.union(v.literal('device'), v.literal('user'))),
+    ownerType: v.optional(v.union(v.literal('device'), v.literal('user'), v.literal('family'))),
     ownerId: v.optional(v.string()),
+    categoryKind: v.optional(v.union(v.literal('expense'), v.literal('income'), v.literal('transfer'))),
     name: v.optional(v.string()),
     label: v.optional(v.string()),
     slug: v.optional(v.string()),
@@ -120,6 +202,7 @@ export default defineSchema({
     rolloverMode: v.optional(
       v.union(v.literal('none'), v.literal('positive'), v.literal('negative'), v.literal('both'))
     ),
+    carryoverAdjustment: v.optional(v.number()),
     isDefault: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
@@ -135,10 +218,51 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_owner_period_category', ['ownerType', 'ownerId', 'periodStart', 'categoryId']),
 
+  budgetCycleSnapshots: defineTable({
+    ...ownerFields,
+    periodStart: v.string(),
+    periodEnd: v.string(),
+    periodLengthDays: v.number(),
+    totalBudgetBase: v.number(),
+    totalSpent: v.number(),
+    overUnderBase: v.number(),
+    carryoverPositiveTotal: v.number(),
+    carryoverNegativeTotal: v.number(),
+    carryoverNetTotal: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_owner_periodStart', ['ownerType', 'ownerId', 'periodStart'])
+    .index('by_owner_createdAt', ['ownerType', 'ownerId', 'createdAt']),
+
+  budgetCategoryCycleSnapshots: defineTable({
+    ...ownerFields,
+    periodStart: v.string(),
+    categoryId: v.id('categories'),
+    categoryName: v.string(),
+    rolloverMode: v.union(
+      v.literal('none'),
+      v.literal('positive'),
+      v.literal('negative'),
+      v.literal('both')
+    ),
+    budgetBase: v.number(),
+    spent: v.number(),
+    remainingBase: v.number(),
+    carryoverAppliedIn: v.number(),
+    carryoverOut: v.number(),
+    carryoverRunningTotal: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_owner_period_category', ['ownerType', 'ownerId', 'periodStart', 'categoryId'])
+    .index('by_owner_period', ['ownerType', 'ownerId', 'periodStart']),
+
   budgetSettings: defineTable({
     ...ownerFields,
     cycleLengthDays: v.number(),
     anchorDate: v.string(),
+    monthlyIncome: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_owner', ['ownerType', 'ownerId']),
@@ -225,14 +349,25 @@ export default defineSchema({
 
   recipes: defineTable({
     ...ownerFields,
-    title: v.string(),
+    // Legacy fields kept temporarily for backwards compatibility.
+    title: v.optional(v.string()),
+    content: v.optional(v.string()),
+    // New canonical recipe model.
+    name: v.optional(v.string()),
+    instructions: v.optional(v.string()),
     sourceUrl: v.optional(v.string()),
     servings: v.optional(v.number()),
+    pricePerServing: v.optional(v.number()),
+    costConfidence: v.optional(v.number()),
+    costSources: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
-    content: v.string(),
+    tags: v.optional(v.array(v.string())),
+    searchName: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_owner', ['ownerType', 'ownerId']),
+  })
+    .index('by_owner', ['ownerType', 'ownerId'])
+    .index('by_owner_and_searchName', ['ownerType', 'ownerId', 'searchName']),
 
   recipeIngredients: defineTable({
     ...ownerFields,
@@ -247,6 +382,7 @@ export default defineSchema({
   mealPlans: defineTable({
     ...ownerFields,
     weekStart: v.string(),
+    planningMode: v.optional(v.union(v.literal('all'), v.literal('lunchDinner'), v.literal('dinnerOnly'))),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_owner_week', ['ownerType', 'ownerId', 'weekStart']),
@@ -259,6 +395,13 @@ export default defineSchema({
     day: v.string(),
     slot: v.optional(v.string()),
     notes: v.optional(v.string()),
+    mealType: v.optional(v.union(
+      v.literal('recipe'),
+      v.literal('leftovers'),
+      v.literal('eatOut'),
+      v.literal('skip'),
+      v.literal('other')
+    )),
   }).index('by_plan', ['mealPlanId']),
 
   shoppingListItems: defineTable({
@@ -269,7 +412,12 @@ export default defineSchema({
     quantity: v.optional(v.number()),
     unit: v.optional(v.string()),
     estimatedCost: v.optional(v.number()),
-    priceSource: v.optional(v.union(v.literal('receipt'), v.literal('online'))),
+    priceSource: v.optional(
+      v.union(v.literal('receipt'), v.literal('online'), v.literal('winco'), v.literal('ai'))
+    ),
+    estimateConfidence: v.optional(v.number()),
+    estimateSourceDetail: v.optional(v.string()),
+    estimateRationale: v.optional(v.string()),
     isChecked: v.optional(v.boolean()),
   }).index('by_plan', ['mealPlanId']),
 

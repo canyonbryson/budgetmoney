@@ -1,6 +1,6 @@
-import * as SecureStore from 'expo-secure-store';
+import { secureGetItem, secureSetItem } from '@/lib/secureStore';
 
-const DEVICE_ID_KEY = 'grocerybudget:deviceId';
+const DEVICE_ID_KEY = 'grocerybudget.deviceId';
 let memoryDeviceId: string | null = null;
 
 function generateId() {
@@ -35,7 +35,7 @@ export async function getDeviceId(): Promise<string | null> {
 
 async function safeSecureGet(): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(DEVICE_ID_KEY);
+    return await secureGetItem(DEVICE_ID_KEY);
   } catch {
     return null;
   }
@@ -43,7 +43,7 @@ async function safeSecureGet(): Promise<string | null> {
 
 async function safeSecureSet(value: string): Promise<boolean> {
   try {
-    await SecureStore.setItemAsync(DEVICE_ID_KEY, value);
+    await secureSetItem(DEVICE_ID_KEY, value);
     return true;
   } catch {
     return false;

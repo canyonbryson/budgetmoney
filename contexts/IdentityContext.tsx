@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '@clerk/clerk-expo';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 
 import { getOrCreateDeviceId } from '@/lib/deviceId';
 import { getEntitlements } from '@/lib/entitlements';
@@ -9,7 +9,7 @@ import { useLocalDb } from '@/contexts/LocalDbContext';
 import { api } from '@/convex/_generated/api';
 
 export type Owner = {
-  ownerType: 'device' | 'user';
+  ownerType: 'device' | 'user' | 'family';
   ownerId: string;
 };
 
@@ -19,6 +19,7 @@ type IdentityContextValue = {
   isSignedIn: boolean;
   entitlements: ReturnType<typeof getEntitlements>;
   isReady: boolean;
+  familyName: string | null;
 };
 
 const IdentityContext = React.createContext<IdentityContextValue>({
@@ -27,6 +28,7 @@ const IdentityContext = React.createContext<IdentityContextValue>({
   isSignedIn: false,
   entitlements: getEntitlements(false),
   isReady: false,
+  familyName: null,
 });
 
 export function IdentityProvider({ children }: { children: React.ReactNode }) {
@@ -35,12 +37,13 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
   const [deviceId, setDeviceId] = React.useState<string | null>(null);
   const [hasMerged, setHasMerged] = React.useState(false);
   const [mergeAttemptedFor, setMergeAttemptedFor] = React.useState<string | null>(null);
+  const [hasEnsuredUser, setHasEnsuredUser] = React.useState(false);
   const { ready: localReady, error: localError } = useLocalDb();
 
   const ensureUser = useMutation(api.users.ensure);
   const mergeDevice = useMutation(api.users.mergeDeviceToUser);
   const importLocalData = useMutation(api.users.importLocalData);
-  const bootstrapDefaults = useMutation(api.categories.bootstrapDefaults);
+  const myFamily = useQuery(api.families.getMyFamily, signedIn ? {} : 'skip');
 
   React.useEffect(() => {
     let isMounted = true;
@@ -55,8 +58,17 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!deviceId || !isLoaded || !signedIn) return;
-    void ensureUser({ deviceId });
+    void (async () => {
+      await ensureUser({ deviceId });
+      setHasEnsuredUser(true);
+    })();
   }, [deviceId, isLoaded, signedIn, ensureUser]);
+
+  React.useEffect(() => {
+    if (!signedIn) {
+      setHasEnsuredUser(false);
+    }
+  }, [signedIn]);
 
   React.useEffect(() => {
     if (!deviceId || !isLoaded || !signedIn || !userId || hasMerged) return;
@@ -79,7 +91,7 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
         const dirty = await isLocalDirty();
         if (!dirty) return;
         const payload = await exportLocalData();
-        await importLocalData({ data: payload });
+        await importLocalData({ data: payload as any });
         await clearLocalDirty();
       } finally {
         setMergeAttemptedFor(userId);
@@ -90,17 +102,12 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
   const owner: Owner | null = React.useMemo(() => {
     if (!deviceId || !isLoaded) return null;
     if (signedIn && userId) {
-      return { ownerType: 'user', ownerId: userId };
+      if (!hasEnsuredUser) return null;
+      if (!myFamily?.familyId) return null;
+      return { ownerType: 'family', ownerId: myFamily.familyId };
     }
     return { ownerType: 'device', ownerId: deviceId };
-  }, [deviceId, isLoaded, signedIn, userId]);
-
-  React.useEffect(() => {
-    if (!owner || !isLoaded) return;
-    if (!signedIn) return;
-    if (signedIn && !hasMerged) return;
-    void bootstrapDefaults({ ownerType: owner.ownerType, ownerId: owner.ownerId });
-  }, [owner, isLoaded, signedIn, hasMerged, bootstrapDefaults]);
+  }, [deviceId, isLoaded, signedIn, userId, hasEnsuredUser, myFamily]);
 
   const entitlements = React.useMemo(() => getEntitlements(signedIn), [signedIn]);
 
@@ -112,6 +119,7 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
         isSignedIn: signedIn,
         entitlements,
         isReady: Boolean(deviceId && isLoaded && (signedIn || localReady || localError)),
+        familyName: myFamily?.familyName ?? null,
       }}
     >
       {children}

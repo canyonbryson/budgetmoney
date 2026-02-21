@@ -174,7 +174,7 @@ export default function ReceiptsScreen() {
   const reviewLoading = isSignedIn && (reviewItems === undefined || reviewReceipts === undefined);
 
   return (
-    <ScreenScrollView contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.md }]}>
+    <ScreenScrollView edges={['top']} contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.md }]}>
       <ThemedText type="title">{t(language, 'receipts')}</ThemedText>
       {!isSignedIn ? (
         <ThemedText>{t(language, 'upgradeToUnlock')} {t(language, 'receipts')}</ThemedText>

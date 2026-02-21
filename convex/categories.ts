@@ -1,25 +1,13 @@
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { ownerArgs, resolveOwner } from './ownership';
-
-const DEFAULT_CATEGORIES = [
-  { name: 'Groceries', sub: ['Costco', 'Household', 'Food', 'Eating Out'] },
-  { name: 'Bills', sub: ['Utilities', 'Internet', 'Phone'] },
-  { name: 'Rent', sub: [] },
-  { name: 'Restaurants', sub: [] },
-  { name: 'Transportation', sub: ['Gas', 'Ride Share', 'Transit'] },
-  { name: 'Entertainment', sub: [] },
-  { name: 'Health', sub: [] },
-  { name: 'Transfer', sub: [] },
-  { name: 'Savings', sub: [] },
-  { name: 'Income', sub: [] },
-];
+import { ownerArgs, resolveOwner, type Owner } from './ownership';
+import { getCategoryKind, normalizeCategoryKind, type CategoryKind } from './categoryKinds';
 
 export const list = query({
   args: ownerArgs,
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    return ctx.db
+    const categories = await ctx.db
       .query('categories')
       .filter((q) =>
         q.and(
@@ -28,66 +16,72 @@ export const list = query({
         )
       )
       .collect();
+    return categories.map((category) => ({
+      ...category,
+      categoryKind: getCategoryKind(category),
+    }));
   },
 });
 
 export const bootstrapDefaults = mutation({
   args: ownerArgs,
+  handler: async () => {
+    return;
+  },
+});
+
+export async function ensureDefaultIncomeCategoryForOwner(ctx: any, owner: Owner): Promise<string> {
+  const existingIncome = await ctx.db
+    .query('categories')
+    .filter((q: any) =>
+      q.and(
+        q.eq(q.field('ownerType'), owner.ownerType),
+        q.eq(q.field('ownerId'), owner.ownerId),
+        q.eq(q.field('categoryKind'), 'income')
+      )
+    )
+    .collect();
+  const topLevelIncome = existingIncome.find((category: any) => !category.parentId);
+  if (topLevelIncome) return topLevelIncome._id;
+
+  const namedIncome = await ctx.db
+    .query('categories')
+    .filter((q: any) =>
+      q.and(
+        q.eq(q.field('ownerType'), owner.ownerType),
+        q.eq(q.field('ownerId'), owner.ownerId),
+        q.eq(q.field('name'), 'Income')
+      )
+    )
+    .collect();
+  const namedTopLevelIncome = namedIncome.find((category: any) => !category.parentId);
+  if (namedTopLevelIncome) {
+    const nextKind: CategoryKind = normalizeCategoryKind(namedTopLevelIncome.categoryKind) ?? 'income';
+    await ctx.db.patch(namedTopLevelIncome._id, {
+      categoryKind: nextKind,
+      updatedAt: Date.now(),
+    });
+    return namedTopLevelIncome._id;
+  }
+
+  const now = Date.now();
+  return await ctx.db.insert('categories', {
+    ownerType: owner.ownerType,
+    ownerId: owner.ownerId,
+    categoryKind: 'income',
+    name: 'Income',
+    parentId: undefined,
+    isDefault: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export const ensureIncomeCategory = mutation({
+  args: ownerArgs,
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const existingDefaults = await ctx.db
-      .query('categories')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('isDefault'), true)
-        )
-      )
-      .collect();
-    const byName = new Map<string, any>();
-    const byParentName = new Map<string, Map<string, any>>();
-    for (const cat of existingDefaults) {
-      const childName = cat.name?.trim();
-      if (childName) {
-        byName.set(childName, cat);
-      }
-      if (!cat.parentId) continue;
-      const parent = existingDefaults.find((p) => p._id === cat.parentId);
-      const parentName = parent?.name?.trim();
-      if (!parentName || !childName) continue;
-      const children = byParentName.get(parentName) ?? new Map<string, any>();
-      children.set(childName, cat);
-      byParentName.set(parentName, children);
-    }
-
-    const now = Date.now();
-    for (const top of DEFAULT_CATEGORIES) {
-      let topId = byName.get(top.name)?._id;
-      if (!topId) {
-        topId = await ctx.db.insert('categories', {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          name: top.name,
-          isDefault: true,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-      const childMap = byParentName.get(top.name) ?? new Map<string, any>();
-      for (const sub of top.sub) {
-        if (childMap.has(sub)) continue;
-        await ctx.db.insert('categories', {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          name: sub,
-          parentId: topId,
-          isDefault: true,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    }
+    return await ensureDefaultIncomeCategoryForOwner(ctx, owner);
   },
 });
 
@@ -96,13 +90,18 @@ export const create = mutation({
     ...ownerArgs,
     name: v.string(),
     parentId: v.optional(v.id('categories')),
+    categoryKind: v.optional(
+      v.union(v.literal('expense'), v.literal('income'), v.literal('transfer'))
+    ),
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
     const now = Date.now();
+    const categoryKind = args.categoryKind ?? getCategoryKind({ name: args.name });
     return ctx.db.insert('categories', {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
+      categoryKind,
       name: args.name,
       parentId: args.parentId,
       isDefault: false,
@@ -118,6 +117,9 @@ export const update = mutation({
     id: v.id('categories'),
     name: v.string(),
     parentId: v.optional(v.id('categories')),
+    categoryKind: v.optional(
+      v.union(v.literal('expense'), v.literal('income'), v.literal('transfer'))
+    ),
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
@@ -131,6 +133,7 @@ export const update = mutation({
     await ctx.db.patch(args.id, {
       name: args.name,
       parentId: args.parentId,
+      categoryKind: args.categoryKind ?? getCategoryKind({ ...existing, name: args.name }),
       updatedAt: Date.now(),
     });
   },
@@ -149,13 +152,42 @@ export const setRolloverMode = mutation({
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const category = await ctx.db.get(args.id);
-    if (!category || category.ownerId !== owner.ownerId || category.ownerType !== owner.ownerType) {
-      throw new Error('Not authorized');
-    }
-    await ctx.db.patch(args.id, { rolloverMode: args.rolloverMode, updatedAt: Date.now() });
+    await setCategoryRolloverModeForOwner(ctx, owner, args.id, args.rolloverMode);
   },
 });
+
+export const setCarryoverAdjustment = mutation({
+  args: {
+    ...ownerArgs,
+    id: v.id('categories'),
+    carryoverAdjustment: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const category = await ctx.db.get(args.id);
+    if (!category) return;
+    if (category.ownerId !== owner.ownerId || category.ownerType !== owner.ownerType) {
+      throw new Error('Not authorized');
+    }
+    await ctx.db.patch(args.id, {
+      carryoverAdjustment: args.carryoverAdjustment,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export async function setCategoryRolloverModeForOwner(
+  ctx: any,
+  owner: Owner,
+  categoryId: string,
+  rolloverMode: 'none' | 'positive' | 'negative' | 'both'
+): Promise<null> {
+  const category = await ctx.db.get(categoryId);
+  if (!category) return null;
+  if (category.ownerId !== owner.ownerId || category.ownerType !== owner.ownerType) return null;
+  await ctx.db.patch(categoryId, { rolloverMode, updatedAt: Date.now() });
+  return null;
+}
 
 export const remove = mutation({
   args: {
@@ -164,56 +196,69 @@ export const remove = mutation({
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    const category = await ctx.db.get(args.id);
-    if (!category || category.ownerId !== owner.ownerId || category.ownerType !== owner.ownerType) {
-      throw new Error('Not authorized');
-    }
-    if (category.isDefault) {
-      throw new Error('Default categories cannot be deleted.');
-    }
-
-    const child = await ctx.db
-      .query('categories')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('parentId'), args.id)
-        )
-      )
-      .first();
-    if (child) {
-      throw new Error('Delete subcategories first.');
-    }
-
-    const linkedBudget = await ctx.db
-      .query('budgets')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('categoryId'), args.id)
-        )
-      )
-      .first();
-    if (linkedBudget) {
-      throw new Error('Category has budgets. Remove budgets first.');
-    }
-
-    const linkedTransaction = await ctx.db
-      .query('transactions')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId),
-          q.eq(q.field('categoryId'), args.id)
-        )
-      )
-      .first();
-    if (linkedTransaction) {
-      throw new Error('Category is used by transactions.');
-    }
-
-    await ctx.db.delete(args.id);
+    await removeCategoryForOwner(ctx, owner, args.id);
   },
 });
+
+export async function removeCategoryForOwner(
+  ctx: any,
+  owner: Owner,
+  categoryId: string
+): Promise<null> {
+  const category = await ctx.db.get(categoryId);
+  if (!category) return null;
+  if (category.ownerId !== owner.ownerId || category.ownerType !== owner.ownerType) return null;
+  if (category.isDefault) throw new Error('Default categories cannot be deleted.');
+
+  const child = await ctx.db
+    .query('categories')
+    .filter((q: any) =>
+      q.and(
+        q.eq(q.field('ownerType'), owner.ownerType),
+        q.eq(q.field('ownerId'), owner.ownerId),
+        q.eq(q.field('parentId'), categoryId)
+      )
+    )
+    .first();
+  if (child) throw new Error('Delete subcategories first.');
+
+  const linkedBudgets = await ctx.db
+    .query('budgets')
+    .filter((q: any) =>
+      q.and(
+        q.eq(q.field('ownerType'), owner.ownerType),
+        q.eq(q.field('ownerId'), owner.ownerId),
+        q.eq(q.field('categoryId'), categoryId)
+      )
+    )
+    .collect();
+  for (const budget of linkedBudgets) {
+    await ctx.db.delete(budget._id);
+  }
+
+  const linkedTransactions = await ctx.db
+    .query('transactions')
+    .filter((q: any) =>
+      q.and(
+        q.eq(q.field('ownerType'), owner.ownerType),
+        q.eq(q.field('ownerId'), owner.ownerId),
+        q.eq(q.field('categoryId'), categoryId)
+      )
+    )
+    .collect();
+  const now = Date.now();
+  for (const transaction of linkedTransactions) {
+    const { _id, _creationTime, categoryId: _categoryId, autoCategoryId: _autoCategoryId, ...rest } =
+      transaction;
+    await ctx.db.replace(_id, {
+      ...rest,
+      categorizationSource: 'none',
+      confidence: 0,
+      isTransfer: false,
+      updatedAt: now,
+    });
+  }
+
+  await ctx.db.delete(categoryId);
+  return null;
+}

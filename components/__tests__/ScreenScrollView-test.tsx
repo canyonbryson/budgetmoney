@@ -1,6 +1,6 @@
 import * as React from 'react';
 import renderer from 'react-test-renderer';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, Text } from 'react-native';
 
 import ScreenScrollView from '../ScreenScrollView';
 
@@ -43,4 +43,35 @@ it('removes flex from content container styles', () => {
 
   expect(contentStyle?.flex).toBeUndefined();
   expect(contentStyle?.padding).toBe(10);
+});
+
+it('adds keyboard avoiding wrapper', () => {
+  let tree: renderer.ReactTestRenderer;
+  renderer.act(() => {
+    tree = renderer.create(
+      <ScreenScrollView>
+        <Text>Content</Text>
+      </ScreenScrollView>
+    );
+  });
+
+  const keyboardAvoidingView = tree!.root.findByType(KeyboardAvoidingView);
+  expect(keyboardAvoidingView).toBeTruthy();
+});
+
+it('adds extra bottom padding based on screen height', () => {
+  let tree: renderer.ReactTestRenderer;
+  renderer.act(() => {
+    tree = renderer.create(
+      <ScreenScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text>Content</Text>
+      </ScreenScrollView>
+    );
+  });
+
+  const scrollView = tree!.root.findByType(ScrollView);
+  const contentStyle = StyleSheet.flatten(scrollView.props.contentContainerStyle);
+
+  expect(typeof contentStyle?.paddingBottom).toBe('number');
+  expect(contentStyle?.paddingBottom).toBeGreaterThan(24);
 });

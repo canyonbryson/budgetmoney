@@ -278,7 +278,7 @@ export default function MealPlanScreen() {
               <Pressable
                 key={recipe._id ?? recipe.id}
                 onPress={() => {
-                  setDraftTitle(recipe.title ?? '');
+                  setDraftTitle(recipe.name ?? recipe.title ?? '');
                   setDraftRecipeId(isSignedIn ? recipe._id : null);
                 }}
                 style={[
@@ -287,7 +287,7 @@ export default function MealPlanScreen() {
                   draftRecipeId === recipe._id && { backgroundColor: colors.primaryMuted },
                 ]}
               >
-                <ThemedText>{recipe.title}</ThemedText>
+                <ThemedText>{recipe.name ?? recipe.title}</ThemedText>
               </Pressable>
             ))}
           </View>

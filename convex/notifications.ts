@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { ownerArgs, resolveOwner } from './ownership';
+import { ownerArgs, resolveOwner, type Owner } from './ownership';
 import { api } from './_generated/api';
 
 const DEFAULT_SETTINGS = {
@@ -11,6 +11,26 @@ const DEFAULT_SETTINGS = {
   creditDueDaysBefore: 3,
   weeklySummaryEnabled: true,
   monthlySummaryEnabled: true,
+};
+
+type PlannedVsActual = {
+  periodStart: string;
+  periodEnd: string;
+  weekStart: string;
+  weekEnd: string;
+  weekly: { planned: number; actual: number };
+  monthly: { planned: number; actual: number };
+};
+
+type BudgetAlerts = {
+  thresholdPct: number;
+  overBudget: Array<{
+    categoryId: string;
+    name: string;
+    spent: number;
+    budgetAmount: number;
+    pct: number;
+  }>;
 };
 
 function formatDate(date: Date) {
@@ -40,7 +60,7 @@ function diffDays(from: string, to: string) {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
-async function loadSettings(ctx: any, owner: { ownerType: 'device' | 'user'; ownerId: string }) {
+async function loadSettings(ctx: any, owner: Owner) {
   const existing = await ctx.db
     .query('notificationSettings')
     .withIndex('by_owner', (q: any) =>
@@ -184,7 +204,7 @@ export const getAlerts = query({
     const owner = await resolveOwner(ctx, args);
     const settings = await loadSettings(ctx, owner);
 
-    const planned = await ctx.runQuery(api.dashboard.getPlannedVsActual, {
+    const planned: PlannedVsActual = await ctx.runQuery(api.dashboard.getPlannedVsActual, {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
     });
@@ -250,7 +270,7 @@ export const getAlerts = query({
         daysUntil: daysUntil ?? 0,
       }));
 
-    const budgetAlerts = settings.budgetAlertsEnabled
+    const budgetAlerts: BudgetAlerts = settings.budgetAlertsEnabled
       ? await ctx.runQuery(api.dashboard.getBudgetAlerts, {
           ownerType: owner.ownerType,
           ownerId: owner.ownerId,

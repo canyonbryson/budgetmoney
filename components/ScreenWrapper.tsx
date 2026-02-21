@@ -1,6 +1,12 @@
 import type { PropsWithChildren } from 'react';
 import React from 'react';
-import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import {
   SafeAreaView,
   type Edge,
@@ -30,13 +36,21 @@ export default function ScreenWrapper({
       style={[styles.container, { backgroundColor: colors.background }, style]}
       {...otherProps}
     >
-      {children}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingContainer}
+      >
+        {children}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  keyboardAvoidingContainer: {
     flex: 1,
   },
 });

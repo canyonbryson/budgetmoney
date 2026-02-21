@@ -26,12 +26,14 @@ import { useLocalQuery } from '@/hooks/useLocalQuery';
 import { t } from '@/i18n';
 import { api } from '@/convex/_generated/api';
 import { formatMoney } from '@/lib/money';
+import { resolveTransactionsRouteParams } from '@/lib/transactionsNavigation';
 import {
   createTransaction,
   getCategories,
   listTransactions,
   setTransactionCategory,
 } from '@/lib/localDb';
+import { Id } from '@/convex/_generated/dataModel';
 
 export default function TransactionsScreen() {
   const { language } = useSettings();
@@ -52,6 +54,7 @@ export default function TransactionsScreen() {
   const [filterMinAmount, setFilterMinAmount] = React.useState('');
   const [filterMaxAmount, setFilterMaxAmount] = React.useState('');
   const [filterCategoryId, setFilterCategoryId] = React.useState<string | null>(null);
+  const [filterUncategorizedOnly, setFilterUncategorizedOnly] = React.useState(false);
   const [filterAccountId, setFilterAccountId] = React.useState<string | null>(null);
   const [filterPendingOnly, setFilterPendingOnly] = React.useState(false);
   const [showFilters, setShowFilters] = React.useState(false);
@@ -64,7 +67,11 @@ export default function TransactionsScreen() {
   const [newError, setNewError] = React.useState<string | null>(null);
   const [newSaving, setNewSaving] = React.useState(false);
   const [openedFromParam, setOpenedFromParam] = React.useState(false);
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams<{ openNew?: string | string[]; uncategorizedOnly?: string | string[] }>();
+  const routeParams = resolveTransactionsRouteParams({
+    openNew: params?.openNew,
+    uncategorizedOnly: params?.uncategorizedOnly,
+  });
 
   type TransactionsData = {
     items: {
@@ -74,6 +81,10 @@ export default function TransactionsScreen() {
       amount: number;
       categoryName?: string;
       categoryId?: string;
+      isTransfer?: boolean;
+      isRefund?: boolean;
+      isCreditCardPayment?: boolean;
+      isCreditPurchase?: boolean;
     }[];
   };
   let data: TransactionsData | undefined;
@@ -94,7 +105,10 @@ export default function TransactionsScreen() {
             search: search.trim() || undefined,
             startDate: filterStartDate.trim() || undefined,
             endDate: filterEndDate.trim() || undefined,
-            categoryId: filterCategoryId ?? undefined,
+            categoryId: filterUncategorizedOnly
+              ? undefined
+              : ((filterCategoryId ?? undefined) as Id<'categories'> | undefined),
+            uncategorizedOnly: filterUncategorizedOnly ? true : undefined,
             accountId: filterAccountId ?? undefined,
             minAmount:
               parsedMinAmount !== undefined && Number.isFinite(parsedMinAmount)
@@ -117,7 +131,8 @@ export default function TransactionsScreen() {
         search: search.trim() || undefined,
         startDate: filterStartDate.trim() || undefined,
         endDate: filterEndDate.trim() || undefined,
-        categoryId: filterCategoryId ?? undefined,
+        categoryId: filterUncategorizedOnly ? undefined : (filterCategoryId ?? undefined),
+        uncategorizedOnly: filterUncategorizedOnly ? true : undefined,
         minAmount:
           parsedMinAmount !== undefined && Number.isFinite(parsedMinAmount)
             ? parsedMinAmount
@@ -128,7 +143,16 @@ export default function TransactionsScreen() {
             : undefined,
         pending: filterPendingOnly ? true : undefined,
       }),
-    [search, filterStartDate, filterEndDate, filterCategoryId, filterMinAmount, filterMaxAmount, filterPendingOnly],
+    [
+      search,
+      filterStartDate,
+      filterEndDate,
+      filterCategoryId,
+      filterUncategorizedOnly,
+      filterMinAmount,
+      filterMaxAmount,
+      filterPendingOnly,
+    ],
     !isSignedIn
   );
 
@@ -238,10 +262,17 @@ export default function TransactionsScreen() {
   };
 
   React.useEffect(() => {
-    if (!params?.openNew || openedFromParam) return;
+    if (!routeParams.openNew || openedFromParam) return;
     openNewModal();
     setOpenedFromParam(true);
-  }, [params?.openNew, openedFromParam]);
+  }, [routeParams.openNew, openedFromParam]);
+
+  React.useEffect(() => {
+    if (!routeParams.uncategorizedOnly) return;
+    setFilterCategoryId(null);
+    setFilterUncategorizedOnly(true);
+    setShowFilters(true);
+  }, [routeParams.uncategorizedOnly]);
 
   const openNewModal = () => {
     setNewModalVisible(true);
@@ -280,7 +311,7 @@ export default function TransactionsScreen() {
           name: newName.trim(),
           amount,
           date: newDate.trim(),
-          categoryId: newCategoryId ?? undefined,
+          categoryId: newCategoryId as Id<'categories'>,
           pending: newPending,
         });
       }
@@ -312,7 +343,7 @@ export default function TransactionsScreen() {
   ];
 
   return (
-    <ScreenScrollView contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.lg }]}>
+    <ScreenScrollView edges={['top']} contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.lg }]}>
       {/* Header */}
       <View style={styles.headerRow}>
         <ThemedText type="title">{t(language, 'transactions')}</ThemedText>
@@ -389,28 +420,77 @@ export default function TransactionsScreen() {
                 <ThemedText style={[typography.caption, { color: colors.textMuted }]}>{t(language, 'category')}</ThemedText>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.xs }}>
                   <Pressable
-                    onPress={() => setFilterCategoryId(null)}
+                    onPress={() => {
+                      setFilterCategoryId(null);
+                      setFilterUncategorizedOnly(false);
+                    }}
                     style={[
                       styles.filterPill,
                       { borderRadius: borderRadius.pill, borderColor: colors.border },
-                      filterCategoryId === null && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+                      filterCategoryId === null &&
+                        !filterUncategorizedOnly && {
+                          backgroundColor: colors.primaryMuted,
+                          borderColor: colors.primary,
+                        },
                     ]}
                   >
-                    <ThemedText style={[typography.caption, filterCategoryId === null && { color: colors.primary, fontWeight: '600' }]}>
+                    <ThemedText
+                      style={[
+                        typography.caption,
+                        filterCategoryId === null &&
+                          !filterUncategorizedOnly && { color: colors.primary, fontWeight: '600' },
+                      ]}
+                    >
                       {t(language, 'all')}
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setFilterCategoryId(null);
+                      setFilterUncategorizedOnly(true);
+                    }}
+                    style={[
+                      styles.filterPill,
+                      { borderRadius: borderRadius.pill, borderColor: colors.border },
+                      filterUncategorizedOnly && {
+                        backgroundColor: colors.primaryMuted,
+                        borderColor: colors.primary,
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      style={[
+                        typography.caption,
+                        filterUncategorizedOnly && { color: colors.primary, fontWeight: '600' },
+                      ]}
+                    >
+                      {t(language, 'uncategorized')}
                     </ThemedText>
                   </Pressable>
                   {categoryLabels.map((cat) => (
                     <Pressable
                       key={cat.id}
-                      onPress={() => setFilterCategoryId(cat.id)}
+                      onPress={() => {
+                        setFilterCategoryId(cat.id);
+                        setFilterUncategorizedOnly(false);
+                      }}
                       style={[
                         styles.filterPill,
                         { borderRadius: borderRadius.pill, borderColor: colors.border },
-                        filterCategoryId === cat.id && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+                        !filterUncategorizedOnly &&
+                          filterCategoryId === cat.id && {
+                            backgroundColor: colors.primaryMuted,
+                            borderColor: colors.primary,
+                          },
                       ]}
                     >
-                      <ThemedText style={[typography.caption, filterCategoryId === cat.id && { color: colors.primary, fontWeight: '600' }]}>
+                      <ThemedText
+                        style={[
+                          typography.caption,
+                          !filterUncategorizedOnly &&
+                            filterCategoryId === cat.id && { color: colors.primary, fontWeight: '600' },
+                        ]}
+                      >
                         {cat.label}
                       </ThemedText>
                     </Pressable>
@@ -484,10 +564,10 @@ export default function TransactionsScreen() {
         <Card noPadding>
           {(isSignedIn ? data : localData.data)!.items.map((tx, idx, arr) => {
             const flags: string[] = [];
-            if (tx.isTransfer) flags.push(t(language, 'transfer'));
-            if (tx.isRefund) flags.push(t(language, 'refund'));
-            if (tx.isCreditCardPayment) flags.push(t(language, 'creditPayment'));
-            if (tx.isCreditPurchase) flags.push(t(language, 'creditPurchase'));
+            if ('isTransfer' in tx && tx.isTransfer) flags.push(t(language, 'transfer'));
+            if ('isRefund' in tx && tx.isRefund) flags.push(t(language, 'refund'));
+            if ('isCreditCardPayment' in tx && tx.isCreditCardPayment) flags.push(t(language, 'creditPayment'));
+            if ('isCreditPurchase' in tx && tx.isCreditPurchase) flags.push(t(language, 'creditPurchase'));
 
             return (
               <Pressable key={tx._id} onPress={() => openModal(tx)}>

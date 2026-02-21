@@ -78,10 +78,9 @@ export default function SettingsScreen() {
   const { user } = useUser();
   const { signOut, isSignedIn } = useAuth();
   const { language, setLanguage, theme, setTheme, brandTheme, setBrandTheme } = useSettings();
-  const { entitlements, owner } = useIdentity();
+  const { entitlements, owner, familyName } = useIdentity();
   const { colors, spacing, borderRadius, typography } = useAppTheme();
   const clearAll = useMutation(api.data.clearAll);
-  const bootstrapDefaults = useMutation(api.categories.bootstrapDefaults);
   const notificationSettings = useMutation(api.notifications.upsertSettings);
   const settingsData = useQuery(
     api.notifications.getSettings,
@@ -122,7 +121,6 @@ export default function SettingsScreen() {
   const onClear = async () => {
     if (!owner) return;
     await clearAll({ ownerType: owner.ownerType, ownerId: owner.ownerId });
-    await bootstrapDefaults({ ownerType: owner.ownerType, ownerId: owner.ownerId });
   };
 
   React.useEffect(() => {
@@ -219,7 +217,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScreenScrollView contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.lg }]}>
+    <ScreenScrollView edges={['top']} contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.lg }]}>
       <ThemedText type="title">{t(language, 'settings')}</ThemedText>
 
       {/* User info */}
@@ -230,6 +228,9 @@ export default function SettingsScreen() {
               {t(language, 'signedInAs')}
             </ThemedText>
             <ThemedText type="defaultSemiBold">{user?.emailAddresses?.[0]?.emailAddress}</ThemedText>
+            {familyName ? (
+              <ThemedText style={{ color: colors.textMuted }}>Family: {familyName}</ThemedText>
+            ) : null}
           </View>
         ) : (
           <View style={{ gap: spacing.sm }}>
@@ -478,9 +479,13 @@ export default function SettingsScreen() {
           <View style={{ height: 1, backgroundColor: colors.borderLight }} />
           <SettingsNavRow icon="grid-outline" label={t(language, 'manageCategories')} onPress={() => router.push('/(screens)/categories')} />
           <View style={{ height: 1, backgroundColor: colors.borderLight }} />
+          <SettingsNavRow icon="stats-chart-outline" label={t(language, 'analytics')} onPress={() => router.push('/(tabs)/analytics')} />
+          <View style={{ height: 1, backgroundColor: colors.borderLight }} />
           <SettingsNavRow icon="receipt-outline" label={t(language, 'receipts')} onPress={() => router.push('/(screens)/receipts')} />
           <View style={{ height: 1, backgroundColor: colors.borderLight }} />
           <SettingsNavRow icon="nutrition-outline" label={t(language, 'pantry')} onPress={() => router.push('/(screens)/pantry')} />
+          <View style={{ height: 1, backgroundColor: colors.borderLight }} />
+          <SettingsNavRow icon="people-outline" label="Family" onPress={() => router.push('/(screens)/family')} />
         </View>
       </Card>
 

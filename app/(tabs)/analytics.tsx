@@ -124,7 +124,7 @@ export default function AnalyticsScreen() {
   }
 
   return (
-    <ScreenScrollView contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.md }]}>
+    <ScreenScrollView edges={['top']} contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.md }]}>
       <ThemedText type="title">{t(language, 'analytics')}</ThemedText>
 
       <ThemedView style={{ gap: spacing.sm }}>

@@ -1,7 +1,7 @@
 import React from 'react';
-import * as SecureStore from 'expo-secure-store';
 import type { ThemeId } from '@/constants/themes';
 import { DEFAULT_THEME_ID, themeIds } from '@/constants/themes';
+import { secureGetItem, secureSetItem } from '@/lib/secureStore';
 
 type ThemePreference = 'system' | 'light' | 'dark';
 type LanguageCode = 'en' | 'es' | 'zh-cn';
@@ -25,9 +25,9 @@ const DEFAULT_SETTINGS: Settings = {
   language: 'en',
 };
 
-const THEME_KEY = 'settings:theme';
-const BRAND_THEME_KEY = 'settings:brandTheme';
-const LANGUAGE_KEY = 'settings:language';
+const THEME_KEY = 'settings.theme';
+const BRAND_THEME_KEY = 'settings.brandTheme';
+const LANGUAGE_KEY = 'settings.language';
 
 export const SettingsContext = React.createContext<SettingsContextValue>({
   ...DEFAULT_SETTINGS,
@@ -47,9 +47,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const [storedTheme, storedBrandTheme, storedLanguage] = await Promise.all([
-          SecureStore.getItemAsync(THEME_KEY),
-          SecureStore.getItemAsync(BRAND_THEME_KEY),
-          SecureStore.getItemAsync(LANGUAGE_KEY),
+          secureGetItem(THEME_KEY),
+          secureGetItem(BRAND_THEME_KEY),
+          secureGetItem(LANGUAGE_KEY),
         ]);
         if (storedTheme === 'system' || storedTheme === 'light' || storedTheme === 'dark') {
           setThemeState(storedTheme);
@@ -69,21 +69,21 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const setTheme = React.useCallback(async (next: ThemePreference) => {
     setThemeState(next);
     try {
-      await SecureStore.setItemAsync(THEME_KEY, next);
+      await secureSetItem(THEME_KEY, next);
     } catch {}
   }, []);
 
   const setBrandTheme = React.useCallback(async (next: ThemeId) => {
     setBrandThemeState(next);
     try {
-      await SecureStore.setItemAsync(BRAND_THEME_KEY, next);
+      await secureSetItem(BRAND_THEME_KEY, next);
     } catch {}
   }, []);
 
   const setLanguage = React.useCallback(async (next: LanguageCode) => {
     setLanguageState(next);
     try {
-      await SecureStore.setItemAsync(LANGUAGE_KEY, next);
+      await secureSetItem(LANGUAGE_KEY, next);
     } catch {}
   }, []);
 

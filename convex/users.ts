@@ -1,5 +1,8 @@
 import { v } from 'convex/values';
 import { mutation } from './_generated/server';
+import { ensureDefaultIncomeCategoryForOwner } from './categories';
+import { migrateOwnerData } from './familyMigration';
+import { isFamilyModeEnabled } from './ownership';
 
 const ROLLOVER_MODES = v.union(
   v.literal('none'),
@@ -7,6 +10,48 @@ const ROLLOVER_MODES = v.union(
   v.literal('negative'),
   v.literal('both')
 );
+
+function toMealType(
+  value?: string | null
+): 'recipe' | 'leftovers' | 'eatOut' | 'skip' | 'other' | undefined {
+  if (
+    value === 'recipe' ||
+    value === 'leftovers' ||
+    value === 'eatOut' ||
+    value === 'skip' ||
+    value === 'other'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+async function ensureFamilyForUser(ctx: any, userId: string, now: number) {
+  const existingMembership = await ctx.db
+    .query('familyMembers')
+    .withIndex('by_userId_status', (q: any) => q.eq('userId', userId).eq('status', 'active'))
+    .first();
+  if (existingMembership) {
+    return existingMembership.familyId;
+  }
+
+  const familyId = await ctx.db.insert('families', {
+    name: 'My Family',
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.insert('familyMembers', {
+    familyId,
+    userId,
+    role: 'owner',
+    status: 'active',
+    joinedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return familyId;
+}
 
 export const ensure = mutation({
   args: {
@@ -32,6 +77,18 @@ export const ensure = mutation({
         await ctx.db.patch(existing._id, { updatedAt: now, email: auth.email ?? existing.email });
       }
 
+      const familyId = isFamilyModeEnabled()
+        ? await ensureFamilyForUser(ctx, auth.subject, now)
+        : undefined;
+
+      if (familyId && isFamilyModeEnabled()) {
+        await migrateOwnerData(
+          ctx,
+          { ownerType: 'user', ownerId: auth.subject },
+          { ownerType: 'family', ownerId: String(familyId) }
+        );
+      }
+
       const device = await ctx.db
         .query('userDevices')
         .filter((q) => q.eq(q.field('deviceId'), args.deviceId))
@@ -39,8 +96,8 @@ export const ensure = mutation({
       if (!device) {
         await ctx.db.insert('userDevices', {
           deviceId: args.deviceId,
-          ownerType: 'user',
-          ownerId: auth.subject,
+          ownerType: familyId ? 'family' : 'user',
+          ownerId: familyId ? String(familyId) : auth.subject,
           mergedToUserId: auth.subject,
           createdAt: now,
           updatedAt: now,
@@ -72,8 +129,12 @@ export const importLocalData = mutation({
         v.object({
           id: v.string(),
           name: v.string(),
+          categoryKind: v.optional(
+            v.union(v.literal('expense'), v.literal('income'), v.literal('transfer'))
+          ),
           parentId: v.optional(v.union(v.string(), v.null())),
           rolloverMode: v.optional(ROLLOVER_MODES),
+          carryoverAdjustment: v.optional(v.number()),
           isDefault: v.optional(v.number()),
         })
       ),
@@ -103,10 +164,15 @@ export const importLocalData = mutation({
       recipes: v.array(
         v.object({
           id: v.string(),
-          title: v.string(),
-          content: v.string(),
+          title: v.optional(v.string()),
+          content: v.optional(v.string()),
+          name: v.optional(v.string()),
+          instructions: v.optional(v.string()),
           servings: v.optional(v.union(v.number(), v.null())),
+          pricePerServing: v.optional(v.union(v.number(), v.null())),
           notes: v.optional(v.union(v.string(), v.null())),
+          sourceUrl: v.optional(v.union(v.string(), v.null())),
+          tags: v.optional(v.union(v.array(v.string()), v.null())),
         })
       ),
       recipeIngredients: v.array(
@@ -126,10 +192,12 @@ export const importLocalData = mutation({
       mealPlanItems: v.array(
         v.object({
           mealPlanId: v.string(),
+          recipeId: v.optional(v.union(v.string(), v.null())),
           title: v.string(),
           day: v.string(),
           slot: v.optional(v.union(v.string(), v.null())),
           notes: v.optional(v.union(v.string(), v.null())),
+          mealType: v.optional(v.union(v.string(), v.null())),
         })
       ),
       shoppingListItems: v.array(
@@ -159,8 +227,20 @@ export const importLocalData = mutation({
   handler: async (ctx, args) => {
     const auth = await ctx.auth.getUserIdentity();
     if (!auth) throw new Error('Not authorized');
-    const ownerType = 'user';
-    const ownerId = auth.subject;
+    let ownerType: 'user' | 'family' = 'user';
+    let ownerId = auth.subject;
+    if (isFamilyModeEnabled()) {
+      const membership = await ctx.db
+        .query('familyMembers')
+        .withIndex('by_userId_status', (q: any) =>
+          q.eq('userId', auth.subject).eq('status', 'active')
+        )
+        .first();
+      if (membership) {
+        ownerType = 'family';
+        ownerId = String(membership.familyId);
+      }
+    }
     const now = Date.now();
 
     const normalize = (value: string) => value.toLowerCase().replace(/\\s+/g, ' ').trim();
@@ -195,9 +275,12 @@ export const importLocalData = mutation({
       const key = categoryKey(cat.name, parentName);
       const existing = existingByKey.get(key);
       if (existing) {
-        if (cat.rolloverMode) {
-          await ctx.db.patch(existing._id, { rolloverMode: cat.rolloverMode, updatedAt: now });
-        }
+        await ctx.db.patch(existing._id, {
+          rolloverMode: cat.rolloverMode ?? existing.rolloverMode,
+          carryoverAdjustment: cat.carryoverAdjustment ?? existing.carryoverAdjustment,
+          categoryKind: cat.categoryKind ?? existing.categoryKind,
+          updatedAt: now,
+        });
         categoryIdMap.set(cat.id, existing._id);
         continue;
       }
@@ -215,14 +298,18 @@ export const importLocalData = mutation({
         ownerType,
         ownerId,
         name: cat.name,
+        categoryKind: cat.categoryKind,
         parentId,
         rolloverMode: cat.rolloverMode ?? 'none',
+        carryoverAdjustment: cat.carryoverAdjustment ?? 0,
         isDefault: Boolean(cat.isDefault),
         createdAt: now,
         updatedAt: now,
       });
       categoryIdMap.set(cat.id, createdId);
     }
+
+    await ensureDefaultIncomeCategoryForOwner(ctx, { ownerType, ownerId });
 
     if (args.data.budgetSettings) {
       const existingSettings = await ctx.db
@@ -323,18 +410,28 @@ export const importLocalData = mutation({
       .collect();
     const recipeKey = (title: string, content: string) =>
       `${normalize(title)}::${normalize(content)}`;
-    const recipeMap = new Map(existingRecipes.map((r) => [recipeKey(r.title, r.content), r]));
+    const recipeMap = new Map(
+      existingRecipes.map((r) => [recipeKey(r.name ?? r.title ?? '', r.instructions ?? r.content ?? ''), r])
+    );
     const recipeIdMap = new Map<string, any>();
 
     for (const recipe of args.data.recipes ?? []) {
-      const key = recipeKey(recipe.title, recipe.content);
+      const name = (recipe.name ?? recipe.title ?? '').trim() || 'Recipe';
+      const instructions = recipe.instructions ?? recipe.content ?? '';
+      const key = recipeKey(name, instructions);
       const existing = recipeMap.get(key);
       if (existing) {
         await ctx.db.patch(existing._id, {
-          title: recipe.title,
-          content: recipe.content,
+          title: name,
+          content: instructions,
+          name,
+          instructions,
           servings: recipe.servings ?? undefined,
+          pricePerServing: recipe.pricePerServing ?? undefined,
           notes: recipe.notes ?? undefined,
+          sourceUrl: recipe.sourceUrl ?? undefined,
+          tags: recipe.tags ?? undefined,
+          searchName: normalize(name),
           updatedAt: now,
         });
         recipeIdMap.set(recipe.id, existing._id);
@@ -343,10 +440,16 @@ export const importLocalData = mutation({
       const createdId = await ctx.db.insert('recipes', {
         ownerType,
         ownerId,
-        title: recipe.title,
-        content: recipe.content,
+        title: name,
+        content: instructions,
+        name,
+        instructions,
         servings: recipe.servings ?? undefined,
+        pricePerServing: recipe.pricePerServing ?? undefined,
         notes: recipe.notes ?? undefined,
+        sourceUrl: recipe.sourceUrl ?? undefined,
+        tags: recipe.tags ?? undefined,
+        searchName: normalize(name),
         createdAt: now,
         updatedAt: now,
       });
@@ -431,10 +534,12 @@ export const importLocalData = mutation({
           ownerType,
           ownerId,
           mealPlanId: serverPlanId,
+          recipeId: item.recipeId ? recipeIdMap.get(item.recipeId) : undefined,
           title: item.title,
           day: item.day,
           slot: item.slot ?? undefined,
           notes: item.notes ?? undefined,
+          mealType: toMealType(item.mealType ?? null),
         });
       }
 
@@ -457,7 +562,6 @@ export const importLocalData = mutation({
           estimatedCost: item.estimatedCost ?? undefined,
           priceSource: undefined,
           isChecked: Boolean(item.isChecked),
-          inPantry: Boolean(item.inPantry),
         });
       }
     }
@@ -544,5 +648,27 @@ export const mergeDeviceToUser = mutation({
     await reassign('itemPrices');
     await reassign('creditCards');
     await reassign('notificationSettings');
+    await reassign('devices');
+
+    if (isFamilyModeEnabled()) {
+      const familyId = await ensureFamilyForUser(ctx, auth.subject, now);
+      await migrateOwnerData(
+        ctx,
+        { ownerType: 'user', ownerId: auth.subject },
+        { ownerType: 'family', ownerId: String(familyId) }
+      );
+
+      const refreshedDevice = await ctx.db
+        .query('userDevices')
+        .filter((q) => q.eq(q.field('deviceId'), args.deviceId))
+        .first();
+      if (refreshedDevice) {
+        await ctx.db.patch(refreshedDevice._id, {
+          ownerType: 'family',
+          ownerId: String(familyId),
+          updatedAt: now,
+        });
+      }
+    }
   },
 });

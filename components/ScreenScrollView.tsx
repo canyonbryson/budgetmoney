@@ -1,6 +1,14 @@
 import type { PropsWithChildren } from 'react';
 import React from 'react';
-import { ScrollView, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import {
   SafeAreaView,
   type Edge,
@@ -19,36 +27,53 @@ type ScreenScrollViewProps = PropsWithChildren<
 
 export default function ScreenScrollView({
   children,
-  edges = ['top'],
+  edges = [],
   style,
   contentContainerStyle,
   ...otherProps
 }: ScreenScrollViewProps) {
   const { colors } = useAppTheme();
+  const { height } = useWindowDimensions();
+  const extraBottomPadding = height * 0.2;
   const combinedContentStyle = StyleSheet.flatten([styles.content, contentContainerStyle]) as
     | ViewStyle
     | undefined;
-  const { flex, ...contentWithoutFlex } = combinedContentStyle ?? {};
+  const { flex, paddingBottom, ...contentWithoutFlex } = combinedContentStyle ?? {};
+  const contentPaddingBottom =
+    (typeof paddingBottom === 'number' ? paddingBottom : 0) + extraBottomPadding;
 
   return (
     <SafeAreaView
       edges={edges}
       style={[styles.container, { backgroundColor: colors.background }, style]}
     >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        style={styles.scroll}
-        contentContainerStyle={contentWithoutFlex}
-        {...otherProps}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingContainer}
       >
-        {children}
-      </ScrollView>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          style={styles.scroll}
+          contentContainerStyle={[
+            contentWithoutFlex,
+            {
+              paddingBottom: contentPaddingBottom,
+            },
+          ]}
+          {...otherProps}
+        >
+          {children}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  keyboardAvoidingContainer: {
     flex: 1,
   },
   content: {

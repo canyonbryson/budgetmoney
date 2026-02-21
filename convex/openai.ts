@@ -40,46 +40,62 @@ export async function callOpenAIJson<T>(request: OpenAIJsonRequest): Promise<T> 
   if (!apiKey) throw new Error('Missing OPENAI_API_KEY');
 
   const baseUrl = process.env.OPENAI_BASE_URL ?? DEFAULT_BASE_URL;
-  const response = await fetch(`${baseUrl}/responses`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: request.model,
-      input: request.input,
-      temperature: request.temperature ?? 0.2,
-      max_output_tokens: request.maxOutputTokens ?? 1200,
-      text: {
-        format: {
-          type: 'json_schema',
-          name: request.schema.name,
-          schema: request.schema.schema,
-          strict: request.schema.strict ?? true,
-        },
+  let maxOutputTokens = request.maxOutputTokens ?? 1200;
+  let parseFailure: Error | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(`${baseUrl}/responses`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        model: request.model,
+        input: request.input,
+        temperature: request.temperature ?? 0.2,
+        max_output_tokens: maxOutputTokens,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: request.schema.name,
+            schema: request.schema.schema,
+            strict: request.schema.strict ?? true,
+          },
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(`OpenAI error ${response.status}: ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`OpenAI error ${response.status}: ${errorText}`);
+    }
+
+    const json = await response.json();
+    if (json?.error?.message) {
+      throw new Error(`OpenAI error: ${json.error.message}`);
+    }
+
+    const outputText = extractOutputText(json);
+    if (!outputText) {
+      throw new Error('OpenAI response missing output text');
+    }
+
+    try {
+      return JSON.parse(outputText) as T;
+    } catch (error) {
+      parseFailure = new Error(`OpenAI response was not valid JSON: ${String(error)}`);
+      const hitTokenLimit =
+        json?.status === 'incomplete' &&
+        json?.incomplete_details?.reason === 'max_output_tokens';
+
+      if (!hitTokenLimit || attempt === 1) {
+        throw parseFailure;
+      }
+
+      maxOutputTokens = Math.min(maxOutputTokens * 2, 4000);
+    }
   }
 
-  const json = await response.json();
-  if (json?.error?.message) {
-    throw new Error(`OpenAI error: ${json.error.message}`);
-  }
-
-  const outputText = extractOutputText(json);
-  if (!outputText) {
-    throw new Error('OpenAI response missing output text');
-  }
-
-  try {
-    return JSON.parse(outputText) as T;
-  } catch (error) {
-    throw new Error(`OpenAI response was not valid JSON: ${String(error)}`);
-  }
+  throw parseFailure ?? new Error('OpenAI response was not valid JSON');
 }

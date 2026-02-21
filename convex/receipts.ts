@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import { action, mutation, query } from './_generated/server';
 import { api } from './_generated/api';
 import { Doc, Id } from './_generated/dataModel';
-import { ownerArgs, resolveOwner, requireSignedIn } from './ownership';
+import { ownerArgs, resolveOwner, requireSignedIn, type Owner } from './ownership';
 import { callOpenAIJson } from './openai';
 
 type ReceiptParseItem = {
@@ -161,7 +161,7 @@ function addDays(dateString: string, days: number) {
 
 async function loadCanonicalIndex(
   ctx: any,
-  owner: { ownerType: 'device' | 'user'; ownerId: string }
+  owner: Owner
 ) {
   const canonicalItems = await ctx.db
     .query('canonicalItems')
@@ -188,7 +188,7 @@ async function loadCanonicalIndex(
 
 async function loadGroceryCategoryIndex(
   ctx: any,
-  owner: { ownerType: 'device' | 'user'; ownerId: string }
+  owner: Owner
 ) {
   const categories = await ctx.db
     .query('categories')
@@ -224,7 +224,7 @@ async function loadGroceryCategoryIndex(
 
 async function ensureCanonicalItem(
   ctx: any,
-  owner: { ownerType: 'device' | 'user'; ownerId: string },
+  owner: Owner,
   canonicalIndex: Map<string, any>,
   indexCanonicalItem: (item: any) => void,
   canonicalName: string,
@@ -640,6 +640,7 @@ export const parse = action({
       );
 
       if (candidates.length) {
+        console.log('[parse] found candidates:', merchantName);
         const normalizedMerchant = normalizeMerchantName(merchantName);
         const scored = candidates.map((tx) => {
           const txAmount = Math.abs(tx.amount);

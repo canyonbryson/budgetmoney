@@ -4,6 +4,17 @@ import { Doc, Id } from './_generated/dataModel';
 import { api } from './_generated/api';
 import { ownerArgs, resolveOwner, requireSignedIn } from './ownership';
 import { callOpenAIJson } from './openai';
+import { getCategoryKind } from './categoryKinds';
+import { ensureDefaultIncomeCategoryForOwner } from './categories';
+
+type UncategorizedTransaction = {
+  _id: Id<'transactions'>;
+  name: string;
+  merchantName?: string;
+  amount: number;
+  date: string;
+  mcc?: string;
+};
 
 function normalizeMerchant(name: string) {
   return name.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -31,6 +42,25 @@ function computeLineTotal(
   return undefined;
 }
 
+export function buildCategoryScope(
+  categories: Array<{ _id: Id<'categories'>; parentId?: Id<'categories'> }>,
+  categoryId: Id<'categories'>
+) {
+  const scope = new Set<Id<'categories'>>([categoryId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const category of categories) {
+      if (!category.parentId) continue;
+      if (scope.has(category.parentId) && !scope.has(category._id)) {
+        scope.add(category._id);
+        changed = true;
+      }
+    }
+  }
+  return scope;
+}
+
 export const list = query({
   args: {
     ...ownerArgs,
@@ -39,6 +69,7 @@ export const list = query({
     startDate: v.optional(v.string()),
     endDate: v.optional(v.string()),
     categoryId: v.optional(v.id('categories')),
+    uncategorizedOnly: v.optional(v.boolean()),
     accountId: v.optional(v.string()),
     minAmount: v.optional(v.number()),
     maxAmount: v.optional(v.number()),
@@ -58,9 +89,6 @@ export const list = query({
     if (args.endDate) {
       q = q.filter((f) => f.lte(f.field('date'), args.endDate!));
     }
-    if (args.categoryId) {
-      q = q.filter((f) => f.eq(f.field('categoryId'), args.categoryId));
-    }
     if (args.accountId) {
       q = q.filter((f) => f.eq(f.field('plaidAccountId'), args.accountId));
     }
@@ -74,10 +102,6 @@ export const list = query({
       q = q.filter((f) => f.eq(f.field('pending'), args.pending));
     }
 
-    const limit = args.limit ?? 50;
-    const takeCount = args.search ? limit * 4 : limit;
-    const items = await q.order('desc').take(takeCount);
-
     const categories = await ctx.db
       .query('categories')
       .filter((f) =>
@@ -88,11 +112,26 @@ export const list = query({
       )
       .collect();
     const categoryMap = new Map(categories.map((c) => [c._id, c.name]));
+    const categoryScope = args.categoryId
+      ? buildCategoryScope(categories, args.categoryId)
+      : undefined;
+
+    const limit = args.limit ?? 50;
+    const takeCount = args.search || categoryScope ? limit * 4 : limit;
+    const items = await q.order('desc').take(takeCount);
 
     let filtered = items;
+    if (categoryScope && !args.uncategorizedOnly) {
+      filtered = filtered.filter(
+        (item) => Boolean(item.categoryId) && categoryScope.has(item.categoryId!)
+      );
+    }
+    if (args.uncategorizedOnly) {
+      filtered = filtered.filter((item) => !item.categoryId);
+    }
     if (args.search) {
       const needle = args.search.toLowerCase();
-      filtered = items.filter((item) =>
+      filtered = filtered.filter((item) =>
         item.name.toLowerCase().includes(needle) ||
         (item.merchantName ? item.merchantName.toLowerCase().includes(needle) : false)
       );
@@ -124,6 +163,7 @@ export const createManual = mutation({
   returns: v.id('transactions'),
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
+    await ensureDefaultIncomeCategoryForOwner(ctx, owner);
     const parsedDate = Date.parse(args.date);
     if (Number.isNaN(parsedDate)) {
       throw new Error('Date must be valid (YYYY-MM-DD).');
@@ -203,7 +243,7 @@ export const setCategory = mutation({
     }
 
     const category = await ctx.db.get(args.categoryId);
-    const isTransfer = category?.name?.toLowerCase() === 'transfer';
+    const isTransfer = category ? getCategoryKind(category) === 'transfer' : false;
 
     await ctx.db.patch(args.transactionId, {
       categoryId: args.categoryId,
@@ -214,7 +254,8 @@ export const setCategory = mutation({
     });
 
     if (args.rememberRule) {
-      const merchant = normalizeMerchant(tx.merchantName ?? tx.name);
+      console.log('[setCategory] remembering rule for merchant:', tx.merchantName, tx.name);
+      const merchant = normalizeMerchant(tx.name ?? tx.merchantName);
       const existing = await ctx.db
         .query('merchantRules')
         .filter((q) =>
@@ -390,7 +431,7 @@ export const applyAutoCategories = mutation({
         continue;
       }
       const category = await ctx.db.get(update.categoryId);
-      const isTransfer = category?.name?.toLowerCase() === 'transfer';
+      const isTransfer = category ? getCategoryKind(category) === 'transfer' : false;
       await ctx.db.patch(update.transactionId, {
         categoryId: update.categoryId,
         autoCategoryId: update.categoryId,
@@ -411,6 +452,10 @@ export const autoCategorizeMissing = action({
   handler: async (ctx, args) => {
     await requireSignedIn(ctx);
     const owner = await resolveOwner(ctx, args);
+    await ctx.runMutation(api.categories.ensureIncomeCategory, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+    });
     const categories: Doc<'categories'>[] = await ctx.runQuery(api.categories.list, {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
@@ -439,11 +484,14 @@ export const autoCategorizeMissing = action({
       return { id: String(cat._id), label };
     });
 
-    const uncategorized = await ctx.runQuery(api.transactions.listUncategorized, {
+    const uncategorized: UncategorizedTransaction[] = await ctx.runQuery(
+      api.transactions.listUncategorized,
+      {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
       limit: args.limit ?? 25,
-    });
+      }
+    );
 
     if (!uncategorized.length) {
       return { updated: 0 };

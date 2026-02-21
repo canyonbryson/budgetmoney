@@ -1,0 +1,54 @@
+{
+    "cli": {
+      "version": ">= 16.20.1",
+      "appVersionSource": "remote"
+    },
+    "build": {
+      "env": {
+        "env": {
+          "EXPO_USE_FAST_RESOLVER": "true",
+          "EXPO_PUBLIC_CONVEX_URL": "https://wary-newt-589.convex.cloud",
+          "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_cHJvdmVuLXN3aWZ0LTI1LmNsZXJrLmFjY291bnRzLmRldiQ"
+        }
+      },
+      "development": {
+        "extends": "env",
+        "developmentClient": true,
+        "distribution": "internal",
+        "node": "20.18.0"
+      },
+      "adhoc": { "extends": "env", "distribution": "internal" },
+      "preview": {
+        "extends": "env",
+        "distribution": "store",
+        "node": "20.18.0"
+      },
+      "production": {
+        "extends": "env",
+        "autoIncrement": true,
+        "distribution": "store",
+        "node": "20.18.0",
+        "ios": {
+          "buildConfiguration": "Release"
+        }
+      },
+      "simulator": {
+        "extends": "development",
+        "ios": { "simulator": true }
+      },
+      "local": {
+        "extends": "production",
+        "ios": {
+          "buildConfiguration": "Release",
+          "resourceClass": "m-medium"
+        }
+      },
+      "local-simulator": {
+        "extends": "development",
+        "ios": {
+          "simulator": true
+        }
+      }
+    }
+  }
+  

@@ -2,9 +2,17 @@ import { v } from 'convex/values';
 import { action, mutation, query } from './_generated/server';
 import { Doc } from './_generated/dataModel';
 import { api } from './_generated/api';
-import { ownerArgs, resolveOwner, requireSignedIn } from './ownership';
+import { ownerArgs, resolveOwner, requireSignedIn, type Owner } from './ownership';
 import { callOpenAIJson } from './openai';
 import { lookupSpoonacularPrice } from './priceProviders/spoonacular';
+import { lookupWincoPrice } from './priceProviders/winco';
+import {
+  estimatePricingWithAi,
+  finalizePricingFromEvidence,
+  type PricingEvidenceInput,
+} from './ai/pricing';
+import { normalizeRecipeIngredientsForSave } from './lib/recipeValidation';
+import { load, type CheerioAPI } from 'cheerio';
 
 type RecipeIngredientParse = {
   name: string;
@@ -15,28 +23,61 @@ type RecipeIngredientParse = {
 };
 
 type RecipeParseResult = {
-  title?: string | null;
+  name?: string | null;
   servings?: number | null;
+  instructions?: string | null;
+  price_per_serving?: number | null;
   ingredients: RecipeIngredientParse[];
   notes?: string | null;
+  tags?: string[] | null;
   confidence?: number | null;
 };
 
-const RECIPE_SCHEMA = {
+type ExtractedRecipe = {
+  name?: string;
+  servings?: number | null;
+  ingredientLines: string[];
+  instructionSteps: string[];
+  tags?: string[];
+  source: 'jsonld' | 'dom' | 'heuristic' | 'none';
+};
+
+type ParsedIngredientLine = {
+  quantity?: number;
+  unit?: string;
+  name: string;
+};
+
+export const RECIPE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['ingredients'],
+  required: [
+    'name',
+    'servings',
+    'instructions',
+    'ingredients',
+    'price_per_serving',
+    'notes',
+    'tags',
+    'confidence',
+  ],
   properties: {
-    title: { type: ['string', 'null'] },
+    name: { type: ['string', 'null'] },
     servings: { type: ['number', 'null'] },
+    instructions: { type: ['string', 'null'] },
+    price_per_serving: { type: ['number', 'null'] },
     notes: { type: ['string', 'null'] },
+    tags: {
+      type: ['array', 'null'],
+      items: { type: 'string' },
+    },
     confidence: { type: ['number', 'null'] },
     ingredients: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name'],
+        required: ['name', 'quantity', 'unit', 'confidence', 'canonical_name'],
         properties: {
           name: { type: 'string' },
           quantity: { type: ['number', 'null'] },
@@ -68,9 +109,38 @@ function toOptionalString(value: unknown) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function normalizeTags(tags: unknown): string[] | undefined {
+  if (!Array.isArray(tags)) return undefined;
+  const normalized = Array.from(
+    new Set(
+      tags
+        .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+        .filter((tag) => tag.length > 0)
+    )
+  );
+  return normalized.length ? normalized : undefined;
+}
+
+function getRecipeName(recipe: any) {
+  return toOptionalString(recipe?.name) ?? toOptionalString(recipe?.title) ?? 'Recipe';
+}
+
+function getRecipeInstructions(recipe: any) {
+  return toOptionalString(recipe?.instructions) ?? toOptionalString(recipe?.content) ?? '';
+}
+
+function toRecipeOutput(recipe: any) {
+  return {
+    ...recipe,
+    name: getRecipeName(recipe),
+    instructions: getRecipeInstructions(recipe),
+    tags: normalizeTags(recipe?.tags) ?? [],
+  };
+}
+
 async function loadCanonicalIndex(
   ctx: any,
-  owner: { ownerType: 'device' | 'user'; ownerId: string }
+  owner: Owner
 ) {
   const canonicalItems = await ctx.db
     .query('canonicalItems')
@@ -97,7 +167,7 @@ async function loadCanonicalIndex(
 
 async function ensureCanonicalItem(
   ctx: any,
-  owner: { ownerType: 'device' | 'user'; ownerId: string },
+  owner: Owner,
   canonicalIndex: Map<string, any>,
   indexCanonicalItem: (item: any) => void,
   canonicalName: string,
@@ -167,24 +237,429 @@ function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function isFeatureEnabled(value: string | undefined, enabledWhenMissing = true) {
+  if (!value) return enabledWhenMissing;
+  const normalized = value.trim().toLowerCase();
+  return normalized !== 'false' && normalized !== '0' && normalized !== 'off';
+}
+
 function normalizePrice(value: number, unit?: 'cents' | 'dollars') {
   if (unit === 'cents') return value / 100;
   return value;
 }
 
+export function buildIngredientLookupQueries(name: string): string[] {
+  const trimmed = name.trim();
+  if (!trimmed) return [];
+
+  const prepWordsPattern =
+    /\b(finely|roughly|thinly|thickly|small|medium|large|fresh|freshly|ground|crushed|chopped|minced|diced|shredded|grated|peeled|seeded|cubed|sliced|boneless|skinless|cooked|uncooked|to taste)\b/gi;
+
+  const withoutBrackets = trimmed
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const beforeSemicolon = withoutBrackets.split(';')[0]?.trim() ?? '';
+  const beforeComma = beforeSemicolon.split(',')[0]?.trim() ?? '';
+  const withoutPrep = beforeComma.replace(prepWordsPattern, ' ').replace(/\s+/g, ' ').trim();
+  const normalized = normalizeItemName(beforeComma);
+
+  const candidates = [
+    trimmed,
+    withoutBrackets,
+    beforeSemicolon,
+    beforeComma,
+    withoutPrep,
+    normalized,
+  ].filter((value): value is string => Boolean(value));
+
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const candidate of candidates) {
+    const key = candidate.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(candidate);
+  }
+  return unique;
+}
+
+function safeJsonParse<T = any>(text: string): T | null {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function flattenJsonLd(input: any) {
+  const out: any[] = [];
+  const visit = (node: any) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    if (Array.isArray(node['@graph'])) visit(node['@graph']);
+    out.push(node);
+    for (const value of Object.values(node)) {
+      if (value && typeof value === 'object') visit(value);
+    }
+  };
+  visit(input);
+  return out;
+}
+
+function hasType(node: any, type: string) {
+  const rawType = node?.['@type'];
+  if (!rawType) return false;
+  if (typeof rawType === 'string') return rawType.toLowerCase() === type.toLowerCase();
+  if (Array.isArray(rawType)) {
+    return rawType.some((entry) => String(entry).toLowerCase() === type.toLowerCase());
+  }
+  return false;
+}
+
+function pickBestRecipeNode(nodes: any[]) {
+  const recipes = nodes.filter((node) => hasType(node, 'Recipe'));
+  if (!recipes.length) return null;
+  recipes.sort((left, right) => {
+    const leftIngredients = Array.isArray(left?.recipeIngredient) ? left.recipeIngredient.length : 0;
+    const rightIngredients = Array.isArray(right?.recipeIngredient) ? right.recipeIngredient.length : 0;
+    const leftSteps = Array.isArray(left?.recipeInstructions) ? left.recipeInstructions.length : 0;
+    const rightSteps = Array.isArray(right?.recipeInstructions) ? right.recipeInstructions.length : 0;
+    return rightIngredients + rightSteps - (leftIngredients + leftSteps);
+  });
+  return recipes[0];
+}
+
+function extractStepsFromRecipeInstructions(raw: any): string[] {
+  if (!raw) return [];
+  if (typeof raw === 'string') {
+    return raw
+      .split('\n')
+      .map((step) => step.trim())
+      .filter(Boolean);
+  }
+  if (Array.isArray(raw)) {
+    const steps: string[] = [];
+    for (const item of raw) {
+      if (typeof item === 'string') {
+        const trimmed = item.trim();
+        if (trimmed) steps.push(trimmed);
+        continue;
+      }
+      const text = toOptionalString(item?.text) ?? toOptionalString(item?.name);
+      if (text) steps.push(text);
+      if (Array.isArray(item?.itemListElement)) {
+        for (const nested of item.itemListElement) {
+          const nestedText = toOptionalString(nested?.text) ?? toOptionalString(nested?.name);
+          if (nestedText) steps.push(nestedText);
+        }
+      }
+    }
+    return steps;
+  }
+  if (Array.isArray(raw?.itemListElement)) {
+    return raw.itemListElement
+      .map((item: any) => toOptionalString(item?.text) ?? toOptionalString(item?.name))
+      .filter((item: string | undefined): item is string => Boolean(item));
+  }
+  return [];
+}
+
+function parseServings(value: any): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const match = value.match(/(\d+(\.\d+)?)/);
+  return match ? Number(match[1]) : null;
+}
+
+const FRACTIONS: Record<string, number> = {
+  '¼': 0.25,
+  '⅓': 1 / 3,
+  '½': 0.5,
+  '⅔': 2 / 3,
+  '¾': 0.75,
+  '⅛': 0.125,
+  '⅜': 0.375,
+  '⅝': 0.625,
+  '⅞': 0.875,
+};
+
+function normalizeUnicodeFractions(value: string) {
+  let output = value;
+  for (const [symbol, numberValue] of Object.entries(FRACTIONS)) {
+    output = output.replaceAll(symbol, ` ${numberValue} `);
+  }
+  return output.replace(/\s+/g, ' ').trim();
+}
+
+function parseLeadingNumber(value: string): { quantity?: number; rest: string } {
+  const normalized = normalizeUnicodeFractions(value);
+  const hyphenMixedFraction = normalized.match(/^(\d+)-(\d+)\s*\/\s*(\d+)(\s+|$)/);
+  if (hyphenMixedFraction) {
+    const whole = Number(hyphenMixedFraction[1]);
+    const numerator = Number(hyphenMixedFraction[2]);
+    const denominator = Number(hyphenMixedFraction[3]);
+    if (Number.isFinite(whole) && Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return {
+        quantity: whole + numerator / denominator,
+        rest: normalized.slice(hyphenMixedFraction[0].length).trim(),
+      };
+    }
+  }
+  const mixedSlashFraction = normalized.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)(\s+|$)/);
+  if (mixedSlashFraction) {
+    const whole = Number(mixedSlashFraction[1]);
+    const numerator = Number(mixedSlashFraction[2]);
+    const denominator = Number(mixedSlashFraction[3]);
+    if (Number.isFinite(whole) && Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return {
+        quantity: whole + numerator / denominator,
+        rest: normalized.slice(mixedSlashFraction[0].length).trim(),
+      };
+    }
+  }
+  const slashFraction = normalized.match(/^(\d+)\s*\/\s*(\d+)(\s+|$)/);
+  if (slashFraction) {
+    const numerator = Number(slashFraction[1]);
+    const denominator = Number(slashFraction[2]);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return {
+        quantity: numerator / denominator,
+        rest: normalized.slice(slashFraction[0].length).trim(),
+      };
+    }
+  }
+  const range = normalized.match(/^(\d+(\.\d+)?)(\s*(to|-)\s*)(\d+(\.\d+)?)(\s+|$)/i);
+  if (range) {
+    const left = Number(range[1]);
+    const right = Number(range[5]);
+    const quantity = Number.isFinite(left) && Number.isFinite(right) ? (left + right) / 2 : undefined;
+    return { quantity, rest: normalized.slice(range[0].length).trim() };
+  }
+  const mixedFraction = normalized.match(/^(\d+)\s+(\d+(\.\d+)?)(\s+|$)/);
+  if (mixedFraction) {
+    const left = Number(mixedFraction[1]);
+    const right = Number(mixedFraction[2]);
+    const quantity = Number.isFinite(left) && Number.isFinite(right) ? left + right : undefined;
+    return { quantity, rest: normalized.slice(mixedFraction[0].length).trim() };
+  }
+  const single = normalized.match(/^(\d+(\.\d+)?)(\s+|$)/);
+  if (single) {
+    const quantity = Number(single[1]);
+    return {
+      quantity: Number.isFinite(quantity) ? quantity : undefined,
+      rest: normalized.slice(single[0].length).trim(),
+    };
+  }
+  return { rest: value.trim() };
+}
+
+const UNIT_ALIASES: Record<string, string> = {
+  tablespoon: 'tbsp',
+  tablespoons: 'tbsp',
+  tbsp: 'tbsp',
+  teaspoon: 'tsp',
+  teaspoons: 'tsp',
+  tsp: 'tsp',
+  cup: 'cup',
+  cups: 'cup',
+  ounce: 'oz',
+  ounces: 'oz',
+  oz: 'oz',
+  pound: 'lb',
+  pounds: 'lb',
+  lb: 'lb',
+  lbs: 'lb',
+  clove: 'clove',
+  cloves: 'clove',
+  can: 'can',
+  cans: 'can',
+  package: 'package',
+  packages: 'package',
+  pkg: 'package',
+  pkgs: 'package',
+  stick: 'stick',
+  sticks: 'stick',
+  bunch: 'bunch',
+  bunches: 'bunch',
+  slice: 'slice',
+  slices: 'slice',
+  cl: 'cl',
+  packet: 'packet',
+  packets: 'packet',
+};
+
+function parseUnitAndName(rest: string) {
+  const tokens = rest.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return { unit: undefined, name: '' };
+  const first = tokens[0].toLowerCase().replace(/[^\w]/g, '');
+  const unit = UNIT_ALIASES[first];
+  if (unit) return { unit, name: tokens.slice(1).join(' ').trim() };
+  return { unit: undefined, name: rest.trim() };
+}
+
+export function parseIngredientLine(line: string): ParsedIngredientLine {
+  const cleanedLine = line.replace(/^\*\s*/, '').trim();
+  if (/to taste/i.test(cleanedLine)) {
+    return {
+      name: cleanedLine.replace(/\bto taste\b/gi, '').replace(/\s+/g, ' ').trim() || cleanedLine,
+    };
+  }
+  const withoutQualifier = cleanedLine.replace(/^(about|approximately|approx\.?|heaping|scant)\s+/i, '');
+  const primary = parseLeadingNumber(cleanedLine);
+  const fallback = parseLeadingNumber(withoutQualifier);
+  const quantity = primary.quantity ?? fallback.quantity;
+  const rest = primary.quantity !== undefined ? primary.rest : fallback.rest;
+  const restWithoutPackageSize = rest.replace(/^\([^)]*\)\s*/, '');
+  const { unit, name } = parseUnitAndName(restWithoutPackageSize);
+  const resolvedName = quantity === undefined ? cleanedLine : name || restWithoutPackageSize || rest;
+  return {
+    quantity: toOptionalNumber(quantity),
+    unit: toOptionalString(unit),
+    name: toOptionalString(resolvedName) ?? cleanedLine,
+  };
+}
+
+function normalizeText(text: string) {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function findListAfterHeading($: CheerioAPI, labels: string[]) {
+  const headings = $('h1, h2, h3, h4, h5, strong, b').toArray();
+  for (const element of headings) {
+    const text = normalizeText($(element).text()).toLowerCase();
+    if (!labels.some((label) => text.includes(label.toLowerCase()))) continue;
+    const inParentList = $(element).parent().nextAll('ul,ol').first();
+    if (inParentList.length) {
+      const lines = inParentList
+        .find('li')
+        .toArray()
+        .map((item) => normalizeText($(item).text()))
+        .filter(Boolean);
+      if (lines.length) return lines;
+    }
+    const nextList = $(element).nextAll('ul,ol').first();
+    if (nextList.length) {
+      const lines = nextList
+        .find('li')
+        .toArray()
+        .map((item) => normalizeText($(item).text()))
+        .filter(Boolean);
+      if (lines.length) return lines;
+    }
+  }
+  return [];
+}
+
+export function extractRecipeFromHtml(html: string): ExtractedRecipe {
+  const $ = load(html);
+  const jsonLdBlocks = extractJsonLdBlocks(html);
+  const jsonNodes = jsonLdBlocks.flatMap((block) => {
+    const parsed = safeJsonParse(block);
+    return parsed ? flattenJsonLd(parsed) : [];
+  });
+
+  const recipeNode = pickBestRecipeNode(jsonNodes);
+  if (recipeNode) {
+    const ingredientLines = Array.isArray(recipeNode.recipeIngredient)
+      ? recipeNode.recipeIngredient
+          .map((ingredient: any) => toOptionalString(String(ingredient)))
+          .filter((ingredient: string | undefined): ingredient is string => Boolean(ingredient))
+      : [];
+    const instructionSteps = extractStepsFromRecipeInstructions(recipeNode.recipeInstructions);
+    const name = toOptionalString(recipeNode.name) ?? toOptionalString(recipeNode.headline);
+    const servings = parseServings(recipeNode.recipeYield ?? recipeNode.yield);
+    const tagsRaw = recipeNode.keywords ?? recipeNode.recipeCategory ?? recipeNode.recipeCuisine;
+    const tags =
+      typeof tagsRaw === 'string'
+        ? normalizeTags(tagsRaw.split(','))
+        : Array.isArray(tagsRaw)
+          ? normalizeTags(tagsRaw)
+          : undefined;
+    if (ingredientLines.length || instructionSteps.length) {
+      return { name, servings, ingredientLines, instructionSteps, tags, source: 'jsonld' };
+    }
+  }
+
+  const pluginRoot = $('.wprm-recipe-container, .tasty-recipes, .mv-create-card, .recipe-card').first();
+  if (pluginRoot.length) {
+    const ingredientLines = pluginRoot
+      .find(
+        '.wprm-recipe-ingredient, .tasty-recipes-ingredients li, .mv-create-ingredients li, .recipe-ingredients li'
+      )
+      .toArray()
+      .map((element) => normalizeText($(element).text()))
+      .filter(Boolean);
+    const instructionSteps = pluginRoot
+      .find(
+        '.wprm-recipe-instruction-text, .tasty-recipes-instructions li, .mv-create-instructions li, .recipe-instructions li'
+      )
+      .toArray()
+      .map((element) => normalizeText($(element).text()))
+      .filter(Boolean);
+    const name = toOptionalString(pluginRoot.find('.wprm-recipe-name, .tasty-recipes-title').first().text())
+      ?? toOptionalString($('h1').first().text());
+    if (ingredientLines.length || instructionSteps.length) {
+      return { name, servings: null, ingredientLines, instructionSteps, source: 'dom' };
+    }
+  }
+
+  const scopedRoot = $('article, .entry-content, .post-content, main').first();
+  const scope = scopedRoot.length ? load(scopedRoot.html() ?? '') : $;
+  const ingredientLines = findListAfterHeading(scope, ['ingredients']);
+  const instructionSteps = findListAfterHeading(scope, ['instructions', 'directions', 'method']);
+  if (ingredientLines.length || instructionSteps.length) {
+    return {
+      name: toOptionalString($('h1').first().text()),
+      servings: null,
+      ingredientLines,
+      instructionSteps,
+      source: 'heuristic',
+    };
+  }
+
+  return { ingredientLines: [], instructionSteps: [], source: 'none' };
+}
+
 export const list = query({
-  args: ownerArgs,
+  args: {
+    ...ownerArgs,
+    search: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+  },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
-    return ctx.db
+    const recipes = await ctx.db
       .query('recipes')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('ownerType'), owner.ownerType),
-          q.eq(q.field('ownerId'), owner.ownerId)
-        )
+      .withIndex('by_owner', (q) =>
+        q.eq('ownerType', owner.ownerType).eq('ownerId', owner.ownerId)
       )
       .collect();
+    const search = args.search?.trim().toLowerCase();
+    const requiredTags = normalizeTags(args.tags)?.map((tag) => tag.toLowerCase()) ?? [];
+    return recipes
+      .map((recipe) => toRecipeOutput(recipe))
+      .filter((recipe) => {
+        if (search) {
+          const haystack = [
+            recipe.name,
+            recipe.instructions,
+            recipe.notes ?? '',
+            (recipe.tags ?? []).join(' '),
+          ]
+            .join(' ')
+            .toLowerCase();
+          if (!haystack.includes(search)) return false;
+        }
+        if (!requiredTags.length) return true;
+        const recipeTags = (recipe.tags ?? []).map((tag: string) => tag.toLowerCase());
+        return requiredTags.every((tag) => recipeTags.includes(tag));
+      });
   },
 });
 
@@ -205,7 +680,7 @@ export const getDetail = query({
       .withIndex('by_recipe', (q) => q.eq('recipeId', recipe._id))
       .collect();
 
-    return { recipe, ingredients };
+    return { recipe: toRecipeOutput(recipe), ingredients };
   },
 });
 
@@ -213,6 +688,7 @@ export const importFromUrl = action({
   args: {
     ...ownerArgs,
     url: v.string(),
+    recipeId: v.optional(v.id('recipes')),
   },
   handler: async (ctx, args) => {
     await requireSignedIn(ctx);
@@ -220,7 +696,15 @@ export const importFromUrl = action({
 
     let content = '';
     try {
-      const response = await fetch(args.url);
+      const response = await fetch(args.url, {
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        },
+        redirect: 'follow',
+      });
       if (!response.ok) {
         throw new Error(`Fetch failed: ${response.status}`);
       }
@@ -239,73 +723,188 @@ export const importFromUrl = action({
       .filter((name: string) => name)
       .slice(0, 200);
 
+    const extracted = extractRecipeFromHtml(content);
+    const htmlTitle = extractHtmlTitle(content);
+    const deterministicIngredients = extracted.ingredientLines.map((line) => parseIngredientLine(line));
+    const hasEnoughDeterministicData =
+      deterministicIngredients.length >= 3 && extracted.instructionSteps.length >= 2;
+
     const jsonLd = extractJsonLdBlocks(content)
       .slice(0, 3)
-      .map((block) => truncateText(block, 4000));
-    const htmlTitle = extractHtmlTitle(content);
-
-    const systemPrompt = [
-      'You are a precise recipe parser.',
-      'Extract recipe title, servings, notes, and a list of ingredients.',
-      'For each ingredient, provide a canonical item name (generic, singular, unbranded).',
-      'If you are unsure about quantity or unit, set them to null.',
-    ].join(' ');
-
-    const userPromptParts = [
-      `URL: ${args.url}`,
-      canonicalNames.length > 0
-        ? `Prefer these existing canonical item names when they match: ${canonicalNames.join(', ')}`
-        : 'There are no existing canonical items yet.',
-      jsonLd.length > 0 ? `JSON-LD:\n${jsonLd.join('\n\n')}` : '',
-      `HTML (truncated):\n${truncateText(content, 20000)}`,
-    ].filter((part) => part.length > 0);
+      .map((block) => truncateText(block, 3000));
 
     const model = process.env.OPENAI_RECIPE_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+    let parsed: RecipeParseResult | null = null;
 
-    const parsed = await callOpenAIJson<RecipeParseResult>({
-      model,
-      input: [
-        {
-          role: 'system',
-          content: [{ type: 'input_text', text: systemPrompt }],
-        },
-        {
-          role: 'user',
-          content: [{ type: 'input_text', text: userPromptParts.join('\n\n') }],
-        },
-      ],
-      schema: {
-        name: 'recipe_parse',
-        schema: RECIPE_SCHEMA,
-        strict: true,
-      },
-      temperature: 0.1,
-      maxOutputTokens: 1400,
-    });
+    if (hasEnoughDeterministicData) {
+      const deterministicPrompt = [
+        `URL: ${args.url}`,
+        extracted.name ? `Name: ${extracted.name}` : '',
+        extracted.servings ? `Servings: ${extracted.servings}` : '',
+        canonicalNames.length > 0
+          ? `Prefer these existing canonical item names when they match: ${canonicalNames.join(', ')}`
+          : '',
+        `Ingredients:\n${extracted.ingredientLines.join('\n')}`,
+        `Instructions:\n${extracted.instructionSteps.map((step, index) => `${index + 1}. ${step}`).join('\n')}`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
 
-    const title =
-      toOptionalString(parsed.title ?? null) ??
+      parsed = await callOpenAIJson<RecipeParseResult>({
+        model,
+        input: [
+          {
+            role: 'system',
+            content: [
+              {
+                type: 'input_text',
+                text:
+                  'Canonicalize ingredients to generic singular forms and infer tags/notes when obvious. Keep ingredient quantities and units aligned to provided text.',
+              },
+            ],
+          },
+          {
+            role: 'user',
+            content: [{ type: 'input_text', text: deterministicPrompt }],
+          },
+        ],
+        schema: {
+          name: 'recipe_parse',
+          schema: RECIPE_SCHEMA,
+          strict: true,
+        },
+        temperature: 0.1,
+        maxOutputTokens: 900,
+      });
+    } else {
+      const fallbackPrompt = [
+        `URL: ${args.url}`,
+        canonicalNames.length > 0
+          ? `Prefer these existing canonical item names when they match: ${canonicalNames.join(', ')}`
+          : 'There are no existing canonical items yet.',
+        extracted.ingredientLines.length
+          ? `Extracted ingredient candidates:\n${extracted.ingredientLines.join('\n')}`
+          : '',
+        extracted.instructionSteps.length
+          ? `Extracted instruction candidates:\n${extracted.instructionSteps
+              .map((step, index) => `${index + 1}. ${step}`)
+              .join('\n')}`
+          : '',
+        jsonLd.length > 0 ? `JSON-LD:\n${jsonLd.join('\n\n')}` : '',
+        `HTML (truncated):\n${truncateText(content, 4500)}`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      parsed = await callOpenAIJson<RecipeParseResult>({
+        model,
+        input: [
+          {
+            role: 'system',
+            content: [
+              {
+                type: 'input_text',
+                text:
+                  'You are a precise recipe parser. Extract recipe name, servings, instructions, notes, tags, and ingredients. Always extract numeric quantity and unit when possible; if unsure set to null. Return canonical ingredient names when possible.',
+              },
+            ],
+          },
+          {
+            role: 'user',
+            content: [{ type: 'input_text', text: fallbackPrompt }],
+          },
+        ],
+        schema: {
+          name: 'recipe_parse',
+          schema: RECIPE_SCHEMA,
+          strict: true,
+        },
+        temperature: 0.1,
+        maxOutputTokens: 1400,
+      });
+    }
+
+    const name =
+      extracted.name ??
+      toOptionalString(parsed?.name ?? null) ??
       htmlTitle ??
       args.url.replace(/^https?:\/\//, '').slice(0, 60);
 
-    const ingredients = (parsed.ingredients ?? []).map((ingredient) => ({
-      name: toOptionalString(ingredient.name) ?? 'Unknown ingredient',
-      quantity: toOptionalNumber(ingredient.quantity ?? null),
-      unit: toOptionalString(ingredient.unit ?? null),
-      confidence: toOptionalNumber(ingredient.confidence ?? null),
-      canonicalName: toOptionalString(ingredient.canonical_name ?? null),
-    }));
+    const parsedIngredients = parsed?.ingredients ?? [];
+    const confidenceBySource =
+      extracted.source === 'jsonld' ? 0.95 : extracted.source === 'dom' ? 0.85 : extracted.source === 'heuristic' ? 0.7 : undefined;
 
-    await ctx.runMutation(api.recipes.createParsedInternal, {
+    const deterministicMapped = deterministicIngredients.map((ingredient, index) => {
+      const aiIngredient = parsedIngredients[index];
+      return {
+        name: ingredient.name || toOptionalString(aiIngredient?.name ?? null) || 'Unknown ingredient',
+        quantity: ingredient.quantity ?? toOptionalNumber(aiIngredient?.quantity ?? null),
+        unit: ingredient.unit ?? toOptionalString(aiIngredient?.unit ?? null),
+        confidence: confidenceBySource ?? toOptionalNumber(aiIngredient?.confidence ?? null),
+        canonicalName:
+          toOptionalString(aiIngredient?.canonical_name ?? null) ??
+          toOptionalString(aiIngredient?.name ?? null) ??
+          ingredient.name,
+      };
+    });
+
+    const aiOnlyIngredients = parsedIngredients
+      .slice(deterministicMapped.length)
+      .map((ingredient) => ({
+        name: toOptionalString(ingredient.name) ?? 'Unknown ingredient',
+        quantity: toOptionalNumber(ingredient.quantity ?? null),
+        unit: toOptionalString(ingredient.unit ?? null),
+        confidence: toOptionalNumber(ingredient.confidence ?? null),
+        canonicalName: toOptionalString(ingredient.canonical_name ?? null),
+      }));
+
+    const ingredients = [...deterministicMapped, ...aiOnlyIngredients];
+    const instructions =
+      extracted.instructionSteps.length > 0
+        ? extracted.instructionSteps.join('\n\n')
+        : toOptionalString(parsed?.instructions ?? null) ?? '';
+    const servings = extracted.servings ?? toOptionalNumber(parsed?.servings ?? null);
+    const tags = normalizeTags(extracted.tags ?? parsed?.tags);
+
+    if (args.recipeId) {
+      await ctx.runMutation(api.recipes.update, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        recipeId: args.recipeId,
+        name,
+        instructions,
+        servings,
+        pricePerServing: toOptionalNumber(parsed?.price_per_serving ?? null),
+        notes: toOptionalString(parsed?.notes ?? null),
+        sourceUrl: args.url,
+        tags,
+      });
+      await ctx.runMutation(api.recipes.setIngredients, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        recipeId: args.recipeId,
+        ingredients: ingredients.map((ingredient) => ({
+          name: ingredient.name,
+          quantity: ingredient.quantity,
+          unit: ingredient.unit,
+        })),
+      });
+      return args.recipeId;
+    }
+
+    const recipeId: any = await ctx.runMutation(api.recipes.createParsedInternal, {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
-      title,
+      name,
       sourceUrl: args.url,
-      content,
-      servings: toOptionalNumber(parsed.servings ?? null),
-      notes: toOptionalString(parsed.notes ?? null),
+      instructions,
+      servings,
+      pricePerServing: toOptionalNumber(parsed?.price_per_serving ?? null),
+      notes: toOptionalString(parsed?.notes ?? null),
+      tags,
       ingredients,
     });
+    return recipeId;
   },
 });
 
@@ -345,6 +944,7 @@ export const searchOnline = action({
 
     return results.map((result: any) => ({
       id: result.id,
+      name: result.title,
       title: result.title,
       image: result.image,
       sourceUrl: result.sourceUrl ?? result.spoonacularSourceUrl ?? null,
@@ -355,24 +955,36 @@ export const searchOnline = action({
 export const createInternal = mutation({
   args: {
     ...ownerArgs,
-    title: v.string(),
+    name: v.string(),
     sourceUrl: v.optional(v.string()),
-    content: v.string(),
+    instructions: v.string(),
     servings: v.optional(v.number()),
+    pricePerServing: v.optional(v.number()),
     notes: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
   },
   returns: v.id('recipes'),
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
     const now = Date.now();
+    const name = toOptionalString(args.name) ?? 'Recipe';
+    const instructions = args.instructions ?? '';
+    const tags = normalizeTags(args.tags);
     return await ctx.db.insert('recipes', {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
-      title: args.title,
+      // Legacy fields.
+      title: name,
+      content: instructions,
+      // New fields.
+      name,
       sourceUrl: args.sourceUrl,
-      content: args.content,
+      instructions,
       servings: args.servings,
+      pricePerServing: args.pricePerServing,
       notes: args.notes,
+      tags,
+      searchName: name.toLowerCase(),
       createdAt: now,
       updatedAt: now,
     });
@@ -382,11 +994,13 @@ export const createInternal = mutation({
 export const createParsedInternal = mutation({
   args: {
     ...ownerArgs,
-    title: v.string(),
+    name: v.string(),
     sourceUrl: v.optional(v.string()),
-    content: v.string(),
+    instructions: v.string(),
     servings: v.optional(v.number()),
+    pricePerServing: v.optional(v.number()),
     notes: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
     ingredients: v.array(
       v.object({
         name: v.string(),
@@ -400,15 +1014,23 @@ export const createParsedInternal = mutation({
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
     const now = Date.now();
+    const name = toOptionalString(args.name) ?? 'Recipe';
+    const instructions = args.instructions ?? '';
+    const tags = normalizeTags(args.tags);
 
     const recipeId = await ctx.db.insert('recipes', {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
-      title: args.title,
+      title: name,
       sourceUrl: args.sourceUrl,
-      content: args.content,
+      content: instructions,
+      name,
+      instructions,
       servings: args.servings,
+      pricePerServing: args.pricePerServing,
       notes: args.notes,
+      tags,
+      searchName: name.toLowerCase(),
       createdAt: now,
       updatedAt: now,
     });
@@ -446,10 +1068,13 @@ export const update = mutation({
   args: {
     ...ownerArgs,
     recipeId: v.id('recipes'),
-    title: v.string(),
-    content: v.string(),
+    name: v.string(),
+    instructions: v.string(),
     servings: v.optional(v.number()),
+    pricePerServing: v.optional(v.number()),
     notes: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const owner = await resolveOwner(ctx, args);
@@ -457,16 +1082,25 @@ export const update = mutation({
     if (!recipe || recipe.ownerId !== owner.ownerId || recipe.ownerType !== owner.ownerType) {
       throw new Error('Not authorized');
     }
-    const title = args.title.trim() || recipe.title;
-    const content = args.content.trim() || recipe.content;
+    const name = args.name.trim() || getRecipeName(recipe);
+    const instructions = args.instructions.trim() || getRecipeInstructions(recipe);
     const notes = args.notes?.trim() || undefined;
     const servings = args.servings;
+    const pricePerServing = args.pricePerServing;
+    const sourceUrl = args.sourceUrl?.trim() || undefined;
+    const tags = normalizeTags(args.tags);
 
     await ctx.db.patch(args.recipeId, {
-      title,
-      content,
+      title: name,
+      content: instructions,
+      name,
+      instructions,
       notes,
       servings,
+      pricePerServing,
+      sourceUrl,
+      tags,
+      searchName: name.toLowerCase(),
       updatedAt: Date.now(),
     });
   },
@@ -501,9 +1135,18 @@ export const setIngredients = mutation({
 
     const { canonicalIndex, indexCanonicalItem } = await loadCanonicalIndex(ctx, owner);
 
-    for (const ingredient of args.ingredients) {
+    const normalizedIngredients = normalizeRecipeIngredientsForSave(args.ingredients, {
+      requireAmount: true,
+    });
+    if (normalizedIngredients.blankNameIndexes.length > 0) {
+      throw new Error('Each ingredient must include a name.');
+    }
+    if (normalizedIngredients.missingAmountIndexes.length > 0) {
+      throw new Error('Each ingredient must include an amount before saving.');
+    }
+
+    for (const ingredient of normalizedIngredients.ingredients) {
       const name = ingredient.name.trim();
-      if (!name) continue;
       const canonicalId = await ensureCanonicalItem(
         ctx,
         owner,
@@ -571,21 +1214,20 @@ export const estimateCost = action({
       process.env.SPOONACULAR_PRICE_UNIT ?? process.env.PRICE_LOOKUP_PRICE_UNIT;
     const priceUnit =
       priceUnitRaw === 'cents' || priceUnitRaw === 'dollars' ? priceUnitRaw : undefined;
+    const wincoEnabled =
+      canLookup &&
+      isFeatureEnabled(process.env.WINCO_LOOKUP_ENABLED, false) &&
+      Boolean(process.env.WINCO_LOOKUP_BASE_URL);
+    const wincoBaseUrl = process.env.WINCO_LOOKUP_BASE_URL;
+    const wincoApiKey = process.env.WINCO_LOOKUP_API_KEY;
+    const wincoStoreId = process.env.WINCO_STORE_ID;
 
-    if (!key) {
-      canLookup = false;
-    }
-
-    let totalCost = 0;
-    let missingCount = 0;
-    let onlineCount = 0;
-    let receiptCount = 0;
-    const maxLookups = 10;
+    const pricingInputs: PricingEvidenceInput[] = [];
+    const maxLookups = 14;
     let usedLookups = 0;
 
     for (const ingredient of detail.ingredients) {
-      const quantity = ingredient.quantity ?? 1;
-      let unitPrice: number | undefined;
+      const evidence: PricingEvidenceInput['evidence'] = {};
 
       if (ingredient.normalizedItemId) {
         const latest = await ctx.runQuery(api.prices.getLatestPurchasePrice, {
@@ -594,58 +1236,150 @@ export const estimateCost = action({
           canonicalItemId: ingredient.normalizedItemId,
         });
         if (latest?.price !== undefined && latest?.price !== null) {
-          unitPrice = latest.price;
-          receiptCount += 1;
-        }
-      }
-
-      if (unitPrice === undefined && canLookup && usedLookups < maxLookups) {
-        usedLookups += 1;
-        try {
-          const result = await lookupSpoonacularPrice(ingredient.name, {
-            apiKey: key!,
-            baseUrl: base,
-            priceUnit,
+          evidence.receiptUnitPrice = latest.price;
+        } else {
+          const fallback = await ctx.runQuery(api.prices.getForItem, {
+            ownerType: owner.ownerType,
+            ownerId: owner.ownerId,
+            canonicalItemId: ingredient.normalizedItemId,
           });
-          if (result.price !== undefined && result.price !== null) {
-            unitPrice = normalizePrice(result.price, result.priceUnit);
-            onlineCount += 1;
-            if (ingredient.normalizedItemId && unitPrice !== undefined) {
-              await ctx.runMutation(api.prices.recordOnlineEstimate, {
-                ownerType: owner.ownerType,
-                ownerId: owner.ownerId,
-                canonicalItemId: ingredient.normalizedItemId,
-                price: unitPrice,
-                currency: result.currency ?? 'USD',
-              });
+          if (fallback?.price !== undefined && fallback?.price !== null) {
+            if (fallback.source === 'receipt' && !fallback.isEstimated) {
+              evidence.receiptUnitPrice = fallback.price;
+            } else if (fallback.source === 'winco') {
+              evidence.wincoUnitPrice = fallback.price;
+            } else {
+              evidence.onlineUnitPrice = fallback.price;
             }
           }
-        } catch {
-          // Ignore lookup failures.
         }
       }
 
-      if (unitPrice === undefined) {
-        missingCount += 1;
-        continue;
+      if (
+        evidence.receiptUnitPrice === undefined &&
+        evidence.wincoUnitPrice === undefined &&
+        evidence.onlineUnitPrice === undefined &&
+        canLookup &&
+        usedLookups < maxLookups
+      ) {
+        const lookupQueries = buildIngredientLookupQueries(ingredient.name);
+        for (const lookupQuery of lookupQueries) {
+          if (usedLookups >= maxLookups) break;
+          usedLookups += 1;
+
+          if (wincoEnabled && wincoBaseUrl && evidence.wincoUnitPrice === undefined) {
+            try {
+              const winco = await lookupWincoPrice(lookupQuery, {
+                baseUrl: wincoBaseUrl,
+                apiKey: wincoApiKey,
+                storeId: wincoStoreId,
+                priceUnit,
+              });
+              if (winco.price !== undefined && winco.price !== null) {
+                evidence.wincoUnitPrice = normalizePrice(winco.price, winco.priceUnit);
+              }
+            } catch {
+              // Ignore WinCo lookup failures.
+            }
+          }
+
+          if (
+            evidence.receiptUnitPrice === undefined &&
+            evidence.wincoUnitPrice === undefined &&
+            evidence.onlineUnitPrice === undefined &&
+            key
+          ) {
+            try {
+              const result = await lookupSpoonacularPrice(lookupQuery, {
+                apiKey: key,
+                baseUrl: base,
+                priceUnit,
+              });
+              if (result.price !== undefined && result.price !== null) {
+                evidence.onlineUnitPrice = normalizePrice(result.price, result.priceUnit);
+              }
+            } catch {
+              // Ignore fallback lookup failures.
+            }
+          }
+
+          if (
+            evidence.receiptUnitPrice !== undefined ||
+            evidence.wincoUnitPrice !== undefined ||
+            evidence.onlineUnitPrice !== undefined
+          ) {
+            break;
+          }
+        }
       }
 
-      totalCost += unitPrice * quantity;
+      const selectedUnitPrice =
+        evidence.receiptUnitPrice ?? evidence.wincoUnitPrice ?? evidence.onlineUnitPrice;
+      if (
+        ingredient.normalizedItemId &&
+        selectedUnitPrice !== undefined &&
+        evidence.receiptUnitPrice === undefined
+      ) {
+        await ctx.runMutation(api.prices.recordOnlineEstimate, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          canonicalItemId: ingredient.normalizedItemId,
+          price: selectedUnitPrice,
+          currency: 'USD',
+        });
+      }
+
+      pricingInputs.push({
+        itemName: ingredient.name,
+        canonicalName: ingredient.name,
+        quantity: ingredient.quantity ?? 1,
+        unit: ingredient.unit ?? undefined,
+        evidence,
+      });
     }
 
+    const aiPricingEnabled =
+      canLookup &&
+      isFeatureEnabled(process.env.AI_RECIPE_PRICE_V2_ENABLED, true) &&
+      Boolean(process.env.OPENAI_API_KEY);
+    const aiModel =
+      process.env.OPENAI_RECIPE_PRICE_MODEL ??
+      process.env.OPENAI_PRICE_MODEL ??
+      process.env.OPENAI_MODEL ??
+      'gpt-4o-mini';
+
+    const pricing = aiPricingEnabled
+      ? await estimatePricingWithAi({
+          model: aiModel,
+          contextLabel: `recipe_${args.recipeId}`,
+          inputs: pricingInputs,
+        })
+      : finalizePricingFromEvidence(pricingInputs);
+
+    let receiptCount = 0;
+    let onlineCount = 0;
+    let missingCount = 0;
+    for (const item of pricing.items) {
+      if (item.source === 'receipt') {
+        receiptCount += 1;
+      } else if (item.source === 'missing') {
+        missingCount += 1;
+      } else {
+        onlineCount += 1;
+      }
+    }
+
+    const totalCost = pricing.totalEstimatedCost;
     const servings = detail.recipe.servings ?? 1;
     const costPerServing = servings > 0 ? totalCost / servings : totalCost;
     const ingredientCount = detail.ingredients.length;
-    const confidenceRaw =
-      ingredientCount > 0
-        ? (receiptCount + onlineCount * 0.6) / ingredientCount
-        : 0;
+    const confidenceRaw = ingredientCount > 0 ? (receiptCount + onlineCount * 0.6) / ingredientCount : 0;
     const confidence = Math.max(0, Math.min(1, confidenceRaw));
 
     return {
       totalCost: roundCurrency(totalCost),
       costPerServing: roundCurrency(costPerServing),
-      currency: 'USD',
+      currency: pricing.currency ?? 'USD',
       receiptCount,
       onlineCount,
       missingCount,

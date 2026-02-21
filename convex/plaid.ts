@@ -2,7 +2,8 @@ import { v } from 'convex/values';
 import { action, internalAction, internalQuery, mutation, query } from './_generated/server';
 import { api, internal } from './_generated/api';
 import { Id } from './_generated/dataModel';
-import { ownerArgs, resolveOwner, requireSignedIn } from './ownership';
+import { ownerArgs, resolveOwner, requireSignedIn, type Owner } from './ownership';
+import { defaultIncludeInBudget, inferNetWorthRole, resolveIncludeInBudget } from './netWorthUtils';
 
 type PlaidEnv = 'sandbox' | 'development' | 'production';
 type PlaidTransaction = {
@@ -33,7 +34,7 @@ type PlaidAccount = {
 };
 type PlaidItemDoc = {
   _id: Id<'plaidItems'>;
-  ownerType: 'device' | 'user';
+  ownerType: Owner['ownerType'];
   ownerId: string;
   plaidItemId: string;
   accessToken: string;
@@ -62,9 +63,6 @@ export function formatPlaidErrorMessage(status: number, body: string) {
 
 function getPlaidBaseUrl() {
   const env = (process.env.PLAID_ENV ?? 'sandbox') as PlaidEnv;
-  if (env !== 'sandbox') {
-    throw new Error('Only sandbox is supported for GroceryBudget.');
-  }
   if (env === 'sandbox') return 'https://sandbox.plaid.com';
   if (env === 'development') return 'https://development.plaid.com';
   return 'https://production.plaid.com';
@@ -268,6 +266,11 @@ export const syncTransactionsInternal = internalAction({
       });
     }
 
+    await ctx.runMutation(internal.netWorth.captureSnapshotInternal, {
+      ownerType: args.ownerType,
+      ownerId: args.ownerId,
+    });
+
     return { status: 'ok' };
   },
 });
@@ -428,6 +431,7 @@ export const upsertAccountsInternal = mutation({
         )
         .first();
       if (existing) {
+        const role = existing.netWorthRole ?? inferNetWorthRole(acct.type, acct.subtype);
         await ctx.db.patch(existing._id, {
           name: acct.name,
           mask: acct.mask,
@@ -435,9 +439,19 @@ export const upsertAccountsInternal = mutation({
           type: acct.type,
           currentBalance: acct.currentBalance,
           availableBalance: acct.availableBalance,
+          netWorthRole: role,
+          includeInBudget: resolveIncludeInBudget({
+            includeInBudget: existing.includeInBudget,
+            netWorthRole: role,
+            type: acct.type,
+            subtype: acct.subtype,
+          }),
+          includeInNetWorth: existing.includeInNetWorth ?? true,
+          netWorthBucketId: existing.netWorthBucketId,
           updatedAt: now,
         });
       } else {
+        const role = inferNetWorthRole(acct.type, acct.subtype);
         await ctx.db.insert('plaidAccounts', {
           ownerType: owner.ownerType,
           ownerId: owner.ownerId,
@@ -449,10 +463,62 @@ export const upsertAccountsInternal = mutation({
           type: acct.type,
           currentBalance: acct.currentBalance,
           availableBalance: acct.availableBalance,
+          netWorthRole: role,
+          includeInBudget: defaultIncludeInBudget(role),
+          includeInNetWorth: true,
           updatedAt: now,
         });
       }
     }
+  },
+});
+
+export const updateAccountPreferences = mutation({
+  args: {
+    ...ownerArgs,
+    plaidAccountId: v.string(),
+    netWorthRole: v.optional(
+      v.union(
+        v.literal('checking'),
+        v.literal('savings'),
+        v.literal('investment'),
+        v.literal('liability')
+      )
+    ),
+    includeInBudget: v.optional(v.boolean()),
+    includeInNetWorth: v.optional(v.boolean()),
+    netWorthBucketId: v.optional(v.union(v.id('netWorthBuckets'), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const account = await ctx.db
+      .query('plaidAccounts')
+      .withIndex('by_owner_plaidAccountId', (q) =>
+        q.eq('ownerType', owner.ownerType).eq('ownerId', owner.ownerId).eq('plaidAccountId', args.plaidAccountId)
+      )
+      .unique();
+    if (!account) throw new Error('Account not found');
+
+    const nextRole = args.netWorthRole ?? account.netWorthRole ?? inferNetWorthRole(account.type, account.subtype);
+    const nextIncludeInBudget =
+      typeof args.includeInBudget === 'boolean'
+        ? args.includeInBudget
+        : resolveIncludeInBudget({
+            includeInBudget: account.includeInBudget,
+            netWorthRole: nextRole,
+            type: account.type,
+            subtype: account.subtype,
+          });
+    const nextIncludeInNetWorth =
+      typeof args.includeInNetWorth === 'boolean' ? args.includeInNetWorth : (account.includeInNetWorth ?? true);
+
+    await ctx.db.patch(account._id, {
+      netWorthRole: nextRole,
+      includeInBudget: nextIncludeInBudget,
+      includeInNetWorth: nextIncludeInNetWorth,
+      netWorthBucketId: args.netWorthBucketId === null ? undefined : (args.netWorthBucketId ?? account.netWorthBucketId),
+      updatedAt: Date.now(),
+    });
   },
 });
 

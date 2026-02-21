@@ -1,11 +1,14 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
+import { Ionicons } from '@expo/vector-icons';
 
 import ScreenScrollView from '@/components/ScreenScrollView';
 import ScreenWrapper from '@/components/ScreenWrapper';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import Card from '@/components/Card';
 import Button from '@/components/Button';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useIdentity } from '@/contexts/IdentityContext';
@@ -17,66 +20,126 @@ import { api } from '@/convex/_generated/api';
 import { formatMoney } from '@/lib/money';
 import {
   addShoppingListItem,
-  getShoppingListCurrentWeek,
+  deleteShoppingListItem,
+  generateShoppingListForWeek as generateLocalShoppingListForWeek,
+  getShoppingListForWeek as getLocalShoppingListForWeek,
   moveShoppingListItemToPantry,
   setShoppingListItemChecked,
+  updateShoppingListItem,
 } from '@/lib/localDb';
 import type { Id } from '@/convex/_generated/dataModel';
 
 type FilterKey = 'all' | 'needed' | 'pantry' | 'checked';
 
+const FILTERS: { key: FilterKey; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { key: 'all', icon: 'list' },
+  { key: 'needed', icon: 'cart-outline' },
+  { key: 'pantry', icon: 'home-outline' },
+  { key: 'checked', icon: 'checkmark-done-outline' },
+];
+
 export default function ShoppingListScreen() {
+  const params = useLocalSearchParams<{ weekStart?: string }>();
+  const weekStart =
+    typeof params.weekStart === 'string' && params.weekStart.length ? params.weekStart : undefined;
   const { language } = useSettings();
   const { owner, isReady, entitlements, isSignedIn } = useIdentity();
   const { bumpRefresh } = useLocalDb();
-  const { colors, spacing, borderRadius, typography } = useAppTheme();
+  const { colors, spacing, borderRadius, typography, shadows } = useAppTheme();
   const [filter, setFilter] = React.useState<FilterKey>('needed');
   const [search, setSearch] = React.useState('');
   const [newItemName, setNewItemName] = React.useState('');
   const [newQuantity, setNewQuantity] = React.useState('');
   const [newUnit, setNewUnit] = React.useState('');
   const [newCost, setNewCost] = React.useState('');
+  const [editingId, setEditingId] = React.useState<Id<'shoppingListItems'> | null>(null);
+  const [isGenerating, setIsGenerating] = React.useState(false);
+  const [feedbackError, setFeedbackError] = React.useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = React.useState(false);
 
-  const shoppingList = useQuery(
+  const shoppingListCurrentWeek = useQuery(
     api.mealPlans.getShoppingListCurrentWeek,
-    owner && isSignedIn ? { ownerType: owner.ownerType, ownerId: owner.ownerId } : 'skip'
+    owner && isSignedIn && !weekStart
+      ? { ownerType: owner.ownerType, ownerId: owner.ownerId }
+      : 'skip',
   );
-  const localShoppingList = useLocalQuery(getShoppingListCurrentWeek, [], !isSignedIn);
+  const shoppingListForSelectedWeek = useQuery(
+    api.mealPlans.getShoppingListForWeek,
+    owner && isSignedIn && weekStart
+      ? { ownerType: owner.ownerType, ownerId: owner.ownerId, weekStart }
+      : 'skip',
+  );
+  const shoppingList = weekStart ? shoppingListForSelectedWeek : shoppingListCurrentWeek;
+  const localShoppingList = useLocalQuery(
+    () => getLocalShoppingListForWeek(weekStart),
+    [weekStart ?? 'current'],
+    !isSignedIn,
+  );
   const generateList = useAction(api.mealPlans.generateShoppingList);
+  const addItemRemote = useMutation(api.mealPlans.addShoppingListItem);
+  const updateItemRemote = useMutation(api.mealPlans.updateShoppingListItem);
+  const deleteItemRemote = useMutation(api.mealPlans.deleteShoppingListItem);
   const setChecked = useMutation(api.mealPlans.setShoppingListItemChecked);
   const moveToPantry = useMutation(api.mealPlans.moveShoppingListItemToPantry);
 
   const onGenerate = async () => {
-    if (!owner || !entitlements.canUseAi || !isSignedIn) return;
-    await generateList({ ownerType: owner.ownerType, ownerId: owner.ownerId });
+    if (!owner || isGenerating) return;
+    setFeedbackError(null);
+    setIsGenerating(true);
+    try {
+      if (!isSignedIn) {
+        await generateLocalShoppingListForWeek(weekStart);
+        bumpRefresh();
+      } else {
+        await generateList({
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          weekStart,
+        });
+      }
+    } catch (error: any) {
+      setFeedbackError(error?.message ?? t(language, 'estimateFailed'));
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const onToggleChecked = async (itemId: Id<'shoppingListItems'>, nextValue: boolean) => {
     if (!owner) return;
-    if (!isSignedIn) {
-      await setShoppingListItemChecked(itemId, nextValue);
-      bumpRefresh();
-    } else {
-      await setChecked({
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        itemId,
-        isChecked: nextValue,
-      });
+    setFeedbackError(null);
+    try {
+      if (!isSignedIn) {
+        await setShoppingListItemChecked(itemId, nextValue);
+        bumpRefresh();
+      } else {
+        await setChecked({
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          itemId,
+          isChecked: nextValue,
+        });
+      }
+    } catch (error: any) {
+      setFeedbackError(error?.message ?? t(language, 'estimateFailed'));
     }
   };
 
   const onMoveToPantry = async (itemId: Id<'shoppingListItems'>) => {
     if (!owner) return;
-    if (!isSignedIn) {
-      await moveShoppingListItemToPantry(itemId);
-      bumpRefresh();
-    } else {
-      await moveToPantry({
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        itemId,
-      });
+    setFeedbackError(null);
+    try {
+      if (!isSignedIn) {
+        await moveShoppingListItemToPantry(itemId);
+        bumpRefresh();
+      } else {
+        await moveToPantry({
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          itemId,
+        });
+      }
+    } catch (error: any) {
+      setFeedbackError(error?.message ?? t(language, 'estimateFailed'));
     }
   };
 
@@ -107,23 +170,121 @@ export default function ShoppingListScreen() {
     });
   }, [shoppingList, localShoppingList.data, search, filter, isSignedIn]);
 
+  const shoppingListData = isSignedIn ? shoppingList : localShoppingList.data;
+  const isListLoading = isSignedIn ? !shoppingList : localShoppingList.loading;
+  const hasAnyItems = (shoppingListData?.items?.length ?? 0) > 0;
+
   const onAddItem = async () => {
-    if (!newItemName.trim()) return;
+    if (!owner || !newItemName.trim()) return;
     const parsedQuantity = newQuantity.trim().length ? Number(newQuantity) : undefined;
     const parsedCost = newCost.trim().length ? Number(newCost) : undefined;
-    if (newQuantity.trim().length && !Number.isFinite(parsedQuantity)) return;
-    if (newCost.trim().length && !Number.isFinite(parsedCost)) return;
-    await addShoppingListItem({
-      itemName: newItemName.trim(),
-      quantity: parsedQuantity,
-      unit: newUnit.trim() || undefined,
-      estimatedCost: parsedCost,
-    });
-    bumpRefresh();
+    if (newQuantity.trim().length && !Number.isFinite(parsedQuantity)) {
+      setFeedbackError(t(language, 'invalidAmount'));
+      return;
+    }
+    if (newCost.trim().length && !Number.isFinite(parsedCost)) {
+      setFeedbackError(t(language, 'invalidAmount'));
+      return;
+    }
+    setFeedbackError(null);
+    try {
+      if (!isSignedIn) {
+        if (editingId) {
+          await updateShoppingListItem({
+            itemId: editingId,
+            itemName: newItemName.trim(),
+            quantity: parsedQuantity,
+            unit: newUnit.trim() || undefined,
+            estimatedCost: parsedCost,
+          });
+        } else {
+          await addShoppingListItem({
+            itemName: newItemName.trim(),
+            quantity: parsedQuantity,
+            unit: newUnit.trim() || undefined,
+            estimatedCost: parsedCost,
+          });
+        }
+        bumpRefresh();
+      } else {
+        if (editingId) {
+          await updateItemRemote({
+            ownerType: owner.ownerType,
+            ownerId: owner.ownerId,
+            itemId: editingId,
+            itemName: newItemName.trim(),
+            quantity: parsedQuantity,
+            unit: newUnit.trim() || undefined,
+            estimatedCost: parsedCost,
+          });
+        } else {
+          await addItemRemote({
+            ownerType: owner.ownerType,
+            ownerId: owner.ownerId,
+            weekStart,
+            itemName: newItemName.trim(),
+            quantity: parsedQuantity,
+            unit: newUnit.trim() || undefined,
+            estimatedCost: parsedCost,
+          });
+        }
+      }
+      setEditingId(null);
+      setNewItemName('');
+      setNewQuantity('');
+      setNewUnit('');
+      setNewCost('');
+      setShowAddForm(false);
+    } catch (error: any) {
+      setFeedbackError(error?.message ?? t(language, 'estimateFailed'));
+    }
+  };
+
+  const onEditItem = (item: any) => {
+    setEditingId(item._id);
+    setNewItemName(item.itemName ?? '');
+    setNewQuantity(
+      item.quantity === undefined || item.quantity === null ? '' : String(item.quantity),
+    );
+    setNewUnit(item.unit ?? '');
+    setNewCost(
+      item.estimatedCost === undefined || item.estimatedCost === null
+        ? ''
+        : String(item.estimatedCost),
+    );
+    setShowAddForm(true);
+  };
+
+  const onCancelEdit = () => {
+    setEditingId(null);
     setNewItemName('');
     setNewQuantity('');
     setNewUnit('');
     setNewCost('');
+    setFeedbackError(null);
+    setShowAddForm(false);
+  };
+
+  const onDeleteItem = async (itemId: Id<'shoppingListItems'>) => {
+    if (!owner) return;
+    setFeedbackError(null);
+    try {
+      if (!isSignedIn) {
+        await deleteShoppingListItem(itemId);
+        bumpRefresh();
+      } else {
+        await deleteItemRemote({
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          itemId,
+        });
+      }
+      if (editingId === itemId) {
+        onCancelEdit();
+      }
+    } catch (error: any) {
+      setFeedbackError(error?.message ?? t(language, 'deleteFailed'));
+    }
   };
 
   if (!isReady) {
@@ -134,157 +295,443 @@ export default function ShoppingListScreen() {
     );
   }
 
+  const checkedCount = React.useMemo(() => {
+    const list = isSignedIn ? shoppingList?.items : localShoppingList.data?.items;
+    if (!list) return 0;
+    return list.filter((i: any) => i.isChecked).length;
+  }, [shoppingList, localShoppingList.data, isSignedIn]);
+
+  const totalCount = shoppingListData?.items?.length ?? 0;
+
+  const inputStyle = [
+    styles.input,
+    {
+      borderRadius: borderRadius.md,
+      borderColor: colors.borderLight,
+      color: colors.text,
+      backgroundColor: colors.backgroundCard,
+      ...typography.body,
+    },
+  ];
+
   return (
-    <ScreenScrollView contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.md }]}>
-      <ThemedText type="title">{t(language, 'shoppingList')}</ThemedText>
+    <ScreenScrollView
+      contentContainerStyle={[styles.container, { padding: spacing.lg, gap: spacing.lg }]}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <ThemedText type="title">{t(language, 'shoppingList')}</ThemedText>
+          {hasAnyItems ? (
+            <ThemedText style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>
+              {checkedCount}/{totalCount} {t(language, 'checked').toLowerCase()}
+            </ThemedText>
+          ) : null}
+        </View>
+        <View style={[styles.headerActions, { gap: spacing.sm }]}>
+          <Pressable
+            onPress={() => {
+              setShowAddForm(!showAddForm);
+              if (editingId) onCancelEdit();
+            }}
+            style={[
+              styles.iconButton,
+              {
+                backgroundColor: colors.primary,
+                borderRadius: borderRadius.md,
+                width: 40,
+                height: 40,
+              },
+            ]}
+          >
+            <Ionicons
+              name={showAddForm ? 'close' : 'add'}
+              size={22}
+              color={colors.textOnPrimary}
+            />
+          </Pressable>
+          <Button onPress={onGenerate} disabled={isGenerating} size="sm">
+            {isGenerating ? (
+              <ActivityIndicator size="small" color={colors.textOnPrimary} />
+            ) : (
+              t(language, 'generateList')
+            )}
+          </Button>
+        </View>
+      </View>
 
-      <ThemedView style={styles.actions}>
-        <Button onPress={onGenerate} disabled={!entitlements.canUseAi || !isSignedIn}>
-          {t(language, 'generateList')}
-        </Button>
-      </ThemedView>
-
-      {!isSignedIn ? (
-        <ThemedView style={[styles.row, { gap: spacing.sm }]}>
-          <TextInput
-            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
-            value={newItemName}
-            onChangeText={setNewItemName}
-            placeholder={t(language, 'addItem')}
-            placeholderTextColor={colors.textMuted}
-          />
-          <TextInput
-            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
-            value={newQuantity}
-            onChangeText={setNewQuantity}
-            placeholder={t(language, 'quantity')}
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-          />
-          <TextInput
-            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
-            value={newUnit}
-            onChangeText={setNewUnit}
-            placeholder={t(language, 'unit')}
-            placeholderTextColor={colors.textMuted}
-          />
-          <TextInput
-            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
-            value={newCost}
-            onChangeText={setNewCost}
-            placeholder={t(language, 'amount')}
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-          />
-          <Button onPress={onAddItem}>{t(language, 'addItem')}</Button>
-        </ThemedView>
+      {isSignedIn && !entitlements.canUseAi ? (
+        <ThemedText style={[typography.caption, { color: colors.textMuted }]}>
+          {t(language, 'onlineEstimate')}
+        </ThemedText>
       ) : null}
 
-      <TextInput
-        style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
-        value={search}
-        onChangeText={setSearch}
-        placeholder={t(language, 'search')}
-        placeholderTextColor={colors.textMuted}
-      />
+      {feedbackError ? (
+        <Card variant="accent" style={{ borderColor: colors.error }}>
+          <View style={styles.errorRow}>
+            <Ionicons name="alert-circle" size={18} color={colors.error} />
+            <ThemedText style={[typography.body, { color: colors.error, flex: 1 }]}>
+              {feedbackError}
+            </ThemedText>
+          </View>
+        </Card>
+      ) : null}
 
-      <ThemedView style={[styles.filterRow, { gap: spacing.sm }]}>
-        {[
-          { key: 'all', label: t(language, 'all') },
-          { key: 'needed', label: t(language, 'needed') },
-          { key: 'pantry', label: t(language, 'inPantry') },
-          { key: 'checked', label: t(language, 'checked') },
-        ].map((option) => {
+      {/* Add / Edit Form */}
+      {showAddForm ? (
+        <Card variant="elevated">
+          <View style={{ gap: spacing.md }}>
+            <ThemedText type="defaultSemiBold">
+              {editingId ? t(language, 'edit') : t(language, 'addItem')}
+            </ThemedText>
+            <TextInput
+              style={inputStyle}
+              value={newItemName}
+              onChangeText={setNewItemName}
+              placeholder={t(language, 'addItem')}
+              placeholderTextColor={colors.textMuted}
+            />
+            <View style={[styles.formRow, { gap: spacing.sm }]}>
+              <TextInput
+                style={[inputStyle, { flex: 1 }]}
+                value={newQuantity}
+                onChangeText={setNewQuantity}
+                placeholder={t(language, 'quantity')}
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+              />
+              <TextInput
+                style={[inputStyle, { flex: 1 }]}
+                value={newUnit}
+                onChangeText={setNewUnit}
+                placeholder={t(language, 'unit')}
+                placeholderTextColor={colors.textMuted}
+              />
+              <TextInput
+                style={[inputStyle, { flex: 1 }]}
+                value={newCost}
+                onChangeText={setNewCost}
+                placeholder={t(language, 'amount')}
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={[styles.formActions, { gap: spacing.sm }]}>
+              <Button onPress={onAddItem} style={{ flex: 1 }}>
+                {editingId ? t(language, 'save') : t(language, 'addItem')}
+              </Button>
+              {editingId ? (
+                <Button onPress={onCancelEdit} variant="outline" style={{ flex: 1 }}>
+                  {t(language, 'cancel')}
+                </Button>
+              ) : null}
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
+      {/* Search */}
+      <View
+        style={[
+          styles.searchRow,
+          {
+            borderRadius: borderRadius.md,
+            borderColor: colors.borderLight,
+            backgroundColor: colors.backgroundCard,
+            paddingHorizontal: spacing.md,
+            ...shadows.sm,
+          },
+        ]}
+      >
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.text, ...typography.body }]}
+          value={search}
+          onChangeText={setSearch}
+          placeholder={t(language, 'search')}
+          placeholderTextColor={colors.textMuted}
+        />
+        {search.length > 0 ? (
+          <Pressable onPress={() => setSearch('')} hitSlop={8}>
+            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* Filter Pills */}
+      <View style={[styles.filterRow, { gap: spacing.sm }]}>
+        {FILTERS.map((option) => {
           const isActive = filter === option.key;
           return (
-            <TouchableOpacity
+            <Pressable
               key={option.key}
-              onPress={() => setFilter(option.key as FilterKey)}
+              onPress={() => setFilter(option.key)}
               style={[
-                styles.pill,
-                { borderRadius: borderRadius.pill, borderColor: colors.border },
-                isActive && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+                styles.filterPill,
+                {
+                  borderRadius: borderRadius.pill,
+                  borderColor: isActive ? colors.primary : colors.borderLight,
+                  backgroundColor: isActive ? colors.primaryMuted : colors.backgroundCard,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.xs + 2,
+                  gap: 6,
+                },
               ]}
             >
-              <ThemedText style={isActive ? { ...typography.caption, fontWeight: '600' } : typography.caption}>
-                {option.label}
-              </ThemedText>
-            </TouchableOpacity>
-          );
-        })}
-      </ThemedView>
-
-      {(isSignedIn ? shoppingList : localShoppingList.data) ? (
-        <ThemedView style={[styles.row, { padding: spacing.sm + 2, borderRadius: borderRadius.md, borderColor: colors.border }]}>
-          <ThemedText type="defaultSemiBold">{t(language, 'pricingEstimated')}</ThemedText>
-          <ThemedText type="defaultSemiBold">
-            {formatCurrency((isSignedIn ? shoppingList : localShoppingList.data)!.totalEstimatedCost)}
-          </ThemedText>
-        </ThemedView>
-      ) : null}
-
-      {isSignedIn ? !shoppingList : !localShoppingList.data ? (
-        <ActivityIndicator size="small" color={colors.primary} />
-      ) : filteredItems.length ? (
-        <ThemedView style={{ gap: spacing.sm }}>
-          {filteredItems.map((item: any) => {
-            const pantryLabel =
-              item.coverage === 'partial' && item.remainingQuantity !== undefined ? (
-                <ThemedText style={{ fontSize: 12, color: colors.textMuted }}>
-                  {t(language, 'needed')}: {formatQuantity(item.remainingQuantity, item.remainingUnit)}
-                </ThemedText>
-              ) : item.inPantry ? (
-                <ThemedText style={{ fontSize: 12, color: colors.textMuted }}>{t(language, 'inPantry')}</ThemedText>
-              ) : null;
-
-            return (
-              <TouchableOpacity
-                key={item._id}
-                onPress={() => onToggleChecked(item._id, !item.isChecked)}
+              <Ionicons
+                name={option.icon}
+                size={14}
+                color={isActive ? colors.primary : colors.textMuted}
+              />
+              <ThemedText
                 style={[
-                  styles.row,
-                  { padding: spacing.sm + 2, borderRadius: borderRadius.md, borderColor: colors.borderLight, gap: spacing.sm },
-                  item.isChecked && { opacity: 0.6 },
+                  typography.caption,
+                  isActive ? { fontWeight: '600', color: colors.primary } : { color: colors.textSecondary },
                 ]}
               >
-                <ThemedView style={{ flex: 1, gap: 6 }}>
-                  <ThemedText style={item.isChecked ? { textDecorationLine: 'line-through' } : undefined}>
+                {t(language, option.key === 'pantry' ? 'inPantry' : option.key === 'needed' ? 'needed' : option.key === 'checked' ? 'checked' : 'all')}
+              </ThemedText>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Cost Summary */}
+      {shoppingListData ? (
+        <Card variant="muted" style={{ borderColor: colors.primary }}>
+          <View style={styles.summaryRow}>
+            <View style={[styles.summaryIconWrap, { backgroundColor: colors.primary, borderRadius: borderRadius.md }]}>
+              <Ionicons name="receipt-outline" size={18} color={colors.textOnPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <ThemedText style={[typography.caption, { color: colors.textMuted }]}>
+                {t(language, 'pricingEstimated')}
+              </ThemedText>
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 20 }}>
+                {formatCurrency(shoppingListData.totalEstimatedCost)}
+              </ThemedText>
+            </View>
+            {hasAnyItems ? (
+              <View style={styles.progressWrap}>
+                <ThemedText style={[typography.caption, { color: colors.textMuted, textAlign: 'right' }]}>
+                  {checkedCount}/{totalCount}
+                </ThemedText>
+                <View
+                  style={[
+                    styles.progressTrack,
+                    { backgroundColor: colors.borderLight, borderRadius: borderRadius.pill },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        backgroundColor: colors.primary,
+                        borderRadius: borderRadius.pill,
+                        width: totalCount > 0 ? `${(checkedCount / totalCount) * 100}%` : '0%',
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </Card>
+      ) : null}
+
+      {/* Items List */}
+      {isListLoading ? (
+        <View style={[styles.centered, { paddingVertical: spacing.xxl }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : filteredItems.length ? (
+        <View style={{ gap: spacing.sm }}>
+          {filteredItems.map((item: any) => {
+            const qtyLabel = formatQuantity(item.quantity, item.unit);
+            const costLabel = formatCurrency(item.estimatedCost);
+            const isPartial = item.coverage === 'partial' && item.remainingQuantity !== undefined;
+
+            return (
+              <Pressable
+                key={item._id}
+                onPress={() => onToggleChecked(item._id, !item.isChecked)}
+                style={({ pressed }) => [
+                  styles.itemCard,
+                  {
+                    borderRadius: borderRadius.lg,
+                    borderColor: item.isChecked ? colors.borderLight : colors.borderLight,
+                    backgroundColor: item.isChecked
+                      ? colors.background
+                      : colors.backgroundCard,
+                    padding: spacing.md,
+                    ...(!item.isChecked ? shadows.sm : {}),
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                {/* Checkbox */}
+                <View
+                  style={[
+                    styles.checkbox,
+                    {
+                      borderRadius: borderRadius.sm,
+                      borderColor: item.isChecked ? colors.primary : colors.border,
+                      backgroundColor: item.isChecked ? colors.primary : 'transparent',
+                    },
+                  ]}
+                >
+                  {item.isChecked ? (
+                    <Ionicons name="checkmark" size={14} color={colors.textOnPrimary} />
+                  ) : null}
+                </View>
+
+                {/* Content */}
+                <View style={{ flex: 1, gap: 4 }}>
+                  <ThemedText
+                    style={[
+                      typography.bodySemiBold,
+                      item.isChecked && {
+                        textDecorationLine: 'line-through',
+                        color: colors.textMuted,
+                      },
+                    ]}
+                  >
                     {item.itemName}
                   </ThemedText>
-                  <ThemedView style={styles.itemMeta}>
-                    {item.quantity !== undefined ? (
-                      <ThemedText type="defaultSemiBold">
-                        {formatQuantity(item.quantity, item.unit)}
-                      </ThemedText>
+                  <View style={styles.itemMeta}>
+                    {qtyLabel ? (
+                      <View
+                        style={[
+                          styles.badge,
+                          {
+                            backgroundColor: colors.primaryMuted,
+                            borderRadius: borderRadius.pill,
+                          },
+                        ]}
+                      >
+                        <ThemedText style={[typography.caption, { color: colors.primary, fontWeight: '600' }]}>
+                          {qtyLabel}
+                        </ThemedText>
+                      </View>
+                    ) : null}
+                    {isPartial ? (
+                      <View
+                        style={[
+                          styles.badge,
+                          {
+                            backgroundColor: colors.accentMuted,
+                            borderRadius: borderRadius.pill,
+                          },
+                        ]}
+                      >
+                        <ThemedText style={[typography.caption, { color: colors.accent }]}>
+                          {t(language, 'needed')}: {formatQuantity(item.remainingQuantity, item.remainingUnit)}
+                        </ThemedText>
+                      </View>
+                    ) : item.inPantry ? (
+                      <View
+                        style={[
+                          styles.badge,
+                          {
+                            backgroundColor: colors.primaryMuted,
+                            borderRadius: borderRadius.pill,
+                          },
+                        ]}
+                      >
+                        <Ionicons name="home-outline" size={11} color={colors.primary} />
+                        <ThemedText style={[typography.caption, { color: colors.primary }]}>
+                          {t(language, 'inPantry')}
+                        </ThemedText>
+                      </View>
                     ) : null}
                     {item.priceSource === 'online' ? (
-                      <ThemedText style={{ fontSize: 12, color: colors.textMuted }}>{t(language, 'onlineEstimate')}</ThemedText>
-                    ) : null}
-                    {pantryLabel}
-                    {item.isChecked ? (
-                      <TouchableOpacity
-                        onPress={() => onMoveToPantry(item._id)}
-                        style={[styles.pill, { borderRadius: borderRadius.pill, borderColor: colors.border }]}
+                      <View
+                        style={[
+                          styles.badge,
+                          {
+                            backgroundColor: colors.backgroundElevated,
+                            borderRadius: borderRadius.pill,
+                          },
+                        ]}
                       >
-                        <ThemedText style={typography.label}>
-                          {t(language, 'moveToPantry')}
+                        <Ionicons name="globe-outline" size={11} color={colors.textMuted} />
+                        <ThemedText style={[typography.caption, { color: colors.textMuted }]}>
+                          {t(language, 'onlineEstimate')}
                         </ThemedText>
-                      </TouchableOpacity>
+                      </View>
                     ) : null}
-                  </ThemedView>
-                </ThemedView>
-                <ThemedView style={{ alignItems: 'flex-end', gap: 6 }}>
-                  <ThemedText>{formatCurrency(item.estimatedCost)}</ThemedText>
-                  {item.isChecked ? (
-                    <ThemedText style={{ fontSize: 12, color: colors.textMuted }}>{t(language, 'checked')}</ThemedText>
+                  </View>
+                </View>
+
+                {/* Right side: cost + actions */}
+                <View style={styles.itemRight}>
+                  {costLabel ? (
+                    <ThemedText
+                      style={[
+                        typography.bodySemiBold,
+                        item.isChecked && { color: colors.textMuted },
+                      ]}
+                    >
+                      {costLabel}
+                    </ThemedText>
                   ) : null}
-                </ThemedView>
-              </TouchableOpacity>
+                  <View style={[styles.itemActions, { gap: 2 }]}>
+                    {item.isChecked ? (
+                      <Pressable
+                        onPress={(e: any) => {
+                          e?.stopPropagation?.();
+                          onMoveToPantry(item._id);
+                        }}
+                        hitSlop={6}
+                        style={[styles.actionIcon, { borderRadius: borderRadius.sm }]}
+                      >
+                        <Ionicons name="home-outline" size={16} color={colors.primary} />
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      onPress={(e: any) => {
+                        e?.stopPropagation?.();
+                        onEditItem(item);
+                      }}
+                      hitSlop={6}
+                      style={[styles.actionIcon, { borderRadius: borderRadius.sm }]}
+                    >
+                      <Ionicons name="pencil-outline" size={16} color={colors.textMuted} />
+                    </Pressable>
+                    <Pressable
+                      onPress={(e: any) => {
+                        e?.stopPropagation?.();
+                        onDeleteItem(item._id);
+                      }}
+                      hitSlop={6}
+                      style={[styles.actionIcon, { borderRadius: borderRadius.sm }]}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.error} />
+                    </Pressable>
+                  </View>
+                </View>
+              </Pressable>
             );
           })}
-        </ThemedView>
+        </View>
       ) : (
-        <ThemedText>{t(language, 'noItems')}</ThemedText>
+        <Card>
+          <View style={styles.emptyState}>
+            <Ionicons
+              name={hasAnyItems ? 'filter-outline' : 'cart-outline'}
+              size={40}
+              color={colors.textMuted}
+            />
+            <ThemedText style={{ color: colors.textMuted, textAlign: 'center' }}>
+              {hasAnyItems ? t(language, 'noItemsMatchFilters') : t(language, 'noItems')}
+            </ThemedText>
+            {!hasAnyItems ? (
+              <Button onPress={onGenerate} size="sm" variant="secondary">
+                {t(language, 'generateList')}
+              </Button>
+            ) : null}
+          </View>
+        </Card>
       )}
     </ScreenScrollView>
   );
@@ -292,39 +739,127 @@ export default function ShoppingListScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actions: {
+  header: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
-  input: {
-    height: 40,
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  formRow: {
+    flexDirection: 'row',
+  },
+  formActions: {
+    flexDirection: 'row',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    paddingHorizontal: 10,
+    height: 44,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
   },
   filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
   },
-  row: {
-    borderWidth: 1,
+  summaryRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  summaryIconWrap: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressWrap: {
+    alignItems: 'flex-end',
+    gap: 4,
+    width: 64,
+  },
+  progressTrack: {
+    height: 4,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+  },
+  input: {
+    height: 44,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderWidth: 1,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
   },
   itemMeta: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  itemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionIcon: {
+    padding: 6,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 20,
   },
 });

@@ -1,23 +1,23 @@
 import { useSignIn } from '@clerk/clerk-expo'
-import { Link, useRouter } from 'expo-router'
+import { Link, useLocalSearchParams, useRouter } from 'expo-router'
 import { Text, View, ActivityIndicator, TextInput, StyleSheet } from 'react-native'
 import React from 'react'
 import Button from '@/components/Button'
 import OAuthButton from '@/components/OAuthButton'
 import MaterialCommunityIcons from '@expo/vector-icons/build/MaterialCommunityIcons'
 import { ThemedText } from '@/components/ThemedText'
-import { ThemedView } from '@/components/ThemedView'
 import ScreenWrapper from '@/components/ScreenWrapper'
-import { Ionicons } from '@expo/vector-icons'
 import { useSettings } from '@/contexts/SettingsContext'
 import { useAppTheme } from '@/hooks/useAppTheme'
 import { t } from '@/i18n'
+import { resolvePostAuthPath } from '@/lib/authNavigation'
 
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn()
   const router = useRouter()
+  const params = useLocalSearchParams<{ returnTo?: string | string[] }>()
   const { language } = useSettings()
-  const { colors, spacing, borderRadius } = useAppTheme()
+  const { colors, spacing, borderRadius, typography, shadows } = useAppTheme()
 
   const [emailAddress, setEmailAddress] = React.useState('')
   const [password, setPassword] = React.useState('')
@@ -38,121 +38,173 @@ export default function SignInScreen() {
           session: signInAttempt.createdSessionId
         })
 
-        router.replace('/')
+        router.replace(resolvePostAuthPath(params.returnTo))
       } else {
         console.error(JSON.stringify(signInAttempt, null, 2))
       }
     } catch (err: any) {
       console.error(JSON.stringify(err, null, 2))
     }
-  }, [isLoaded, emailAddress, password])
+  }, [isLoaded, emailAddress, password, params.returnTo])
 
-  if(!isLoaded) {
+  if (!isLoaded) {
     return (
-      <ScreenWrapper style={styles.authScreen}>
+      <ScreenWrapper edges={['top', 'bottom']} style={styles.centered}>
         <ActivityIndicator size="large" color={colors.primary} />
       </ScreenWrapper>
     )
   }
 
   return (
-    <ScreenWrapper style={styles.authScreen}>
-      <View style={[styles.authForm, { padding: spacing.lg + 2, gap: spacing.sm }]}>
+    <ScreenWrapper edges={['top', 'bottom']} style={styles.screen}>
+      {/* Top branding area */}
+      <View style={styles.brandingArea}>
+        <ThemedText type='title' style={{ letterSpacing: -0.5 }}>
+          {t(language, 'appName')}
+        </ThemedText>
+        <ThemedText style={{ color: colors.textMuted, fontSize: typography.body.fontSize }}>
+          {t(language, 'signIn')}
+        </ThemedText>
+      </View>
 
-        {/* Header text */}
-        <ThemedView style={{ marginVertical: spacing.lg, alignItems: "center" }}>
-          <ThemedText type='title'>
-            {t(language, 'appName')}
-          </ThemedText>
-          <ThemedText type='default'>
-            {t(language, 'signIn')}
-          </ThemedText>
-        </ThemedView>
+      {/* Form card */}
+      <View style={[
+        styles.formCard,
+        {
+          backgroundColor: colors.backgroundCard,
+          borderRadius: borderRadius.lg,
+          padding: spacing.xl,
+          marginHorizontal: spacing.lg,
+          gap: spacing.lg,
+          ...shadows.md,
+        },
+      ]}>
+        {/* OAuth */}
+        <OAuthButton strategy="oauth_google">
+          <MaterialCommunityIcons name="google" size={18} />{' '}
+          Google
+        </OAuthButton>
 
-        {/* OAuth buttons */}
-        <View style={{
-          display: "flex",
-          flexDirection: "row",
-          gap: spacing.sm
-        }}>
-          <View style={{ flex: 1 }}>
-            <OAuthButton strategy="oauth_google">
-              <MaterialCommunityIcons name="google" size={18} />{" "}
-              Google
-            </OAuthButton>
-          </View>
-        </View>
-
-        {/* Form separator */}
-        <View style={{flexDirection: 'row', alignItems: 'center'}}>
-          <View style={{flex: 1, height: 1, backgroundColor: colors.borderLight}} />
-          <View>
-            <Text style={{width: 50, textAlign: 'center', color: colors.textMuted}}>or</Text>
-          </View>
-          <View style={{flex: 1, height: 1, backgroundColor: colors.borderLight}} />
+        {/* Separator */}
+        <View style={styles.separator}>
+          <View style={[styles.separatorLine, { backgroundColor: colors.borderLight }]} />
+          <Text style={[styles.separatorText, { color: colors.textMuted, fontFamily: typography.caption.fontFamily }]}>
+            or
+          </Text>
+          <View style={[styles.separatorLine, { backgroundColor: colors.borderLight }]} />
         </View>
 
         {/* Input fields */}
-        <View style={{ gap: spacing.sm, marginBottom: spacing.xl }}>
-          <ThemedText>{t(language, 'email')}</ThemedText>
-          <TextInput
-            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
-            autoCapitalize="none"
-            placeholderTextColor={colors.textMuted}
-            value={emailAddress}
-            onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
-          />
-          <ThemedText>{t(language, 'password')}</ThemedText>
-          <TextInput
-            style={[styles.input, { borderRadius: borderRadius.sm, borderColor: colors.border, color: colors.text }]}
-            value={password}
-            placeholderTextColor={colors.textMuted}
-            secureTextEntry={true}
-            onChangeText={(password) => setPassword(password)}
-          />
+        <View style={{ gap: spacing.md }}>
+          <View style={{ gap: spacing.xs }}>
+            <ThemedText style={{ fontSize: typography.caption.fontSize, fontFamily: typography.label.fontFamily, color: colors.textSecondary }}>
+              {t(language, 'email')}
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  borderRadius: borderRadius.md,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  backgroundColor: colors.background,
+                  fontFamily: typography.body.fontFamily,
+                  fontSize: typography.body.fontSize,
+                },
+              ]}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholderTextColor={colors.textMuted}
+              value={emailAddress}
+              onChangeText={setEmailAddress}
+            />
+          </View>
+          <View style={{ gap: spacing.xs }}>
+            <ThemedText style={{ fontSize: typography.caption.fontSize, fontFamily: typography.label.fontFamily, color: colors.textSecondary }}>
+              {t(language, 'password')}
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  borderRadius: borderRadius.md,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  backgroundColor: colors.background,
+                  fontFamily: typography.body.fontFamily,
+                  fontSize: typography.body.fontSize,
+                },
+              ]}
+              value={password}
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              onChangeText={setPassword}
+            />
+          </View>
         </View>
 
         {/* Sign in button */}
         <Button onPress={onSignInPress}>
-          <Text>{t(language, 'signIn')}</Text> <Ionicons name='caret-forward' />
+          {t(language, 'signIn')}
         </Button>
+      </View>
 
-        {/* Suggest new users create an account */}
-        <View style={{
-          display: "flex",
-          flexDirection: "row",
-          gap: 4,
-          justifyContent: "center",
-          marginVertical: spacing.lg + 2
-        }}>
-          <ThemedText>{t(language, 'dontHaveAccount')}</ThemedText>
-          <Link href="/sign-up">
-            <ThemedText style={{ fontWeight: "bold" }}>{t(language, 'signUp')}</ThemedText>
-          </Link>
-        </View>
-
+      {/* Bottom link */}
+      <View style={[styles.bottomLink, { gap: spacing.xs }]}>
+        <ThemedText style={{ color: colors.textMuted }}>
+          {t(language, 'dontHaveAccount')}
+        </ThemedText>
+        <Link href="/sign-up">
+          <ThemedText style={{ fontWeight: '700', color: colors.primary }}>
+            {t(language, 'signUp')}
+          </ThemedText>
+        </Link>
       </View>
     </ScreenWrapper>
   )
 }
 
 const styles = StyleSheet.create({
-  authScreen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  screen: {
+    marginTop: 50,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  centered: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  authForm: {
-    display: "flex",
-    width: "100%",
+  brandingArea: {
+    alignItems: 'center',
+    marginBottom: 28,
+    gap: 4,
+  },
+  formCard: {
+    // dynamic styles applied inline
+  },
+  separator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  separatorLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  separatorText: {
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   input: {
-    height: 40,
+    height: 48,
     borderWidth: 1,
-    padding: 10,
+    paddingHorizontal: 14,
+  },
+  bottomLink: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 24,
   },
 })

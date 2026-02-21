@@ -6,6 +6,19 @@ export type NormalizedQuantity = {
   kind: UnitKind;
 };
 
+const TRAILING_VARIANT_WORDS = new Set([
+  'clove',
+  'cloves',
+  'sprig',
+  'sprigs',
+  'slice',
+  'slices',
+  'piece',
+  'pieces',
+  'can',
+  'cans',
+]);
+
 const UNIT_MAP: Record<
   string,
   {
@@ -72,10 +85,27 @@ const UNIT_MAP: Record<
 export function normalizeItemName(name: string) {
   const cleaned = name.toLowerCase();
   const withoutSizes = cleaned.replace(
-    /\b\d+(\.\d+)?\s*(oz|ounce|ounces|lb|lbs|pound|pounds|ct|count|pack|pkg|pk|g|kg|mg|ml|l)\b/g,
+    /\b\d+(\.\d+)?\s*(oz|ounce|ounces|lb|lbs|pound|pounds|ct|count|pack|pkg|pk|g|kg|mg|ml|l|clove|cloves|slice|slices|piece|pieces)\b/g,
     ' '
   );
-  return withoutSizes.replace(/[^a-z0-9%]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const normalized = withoutSizes.replace(/[^a-z0-9%]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  while (tokens.length > 1 && TRAILING_VARIANT_WORDS.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+
+  const singularize = (token: string) => {
+    if (token.length <= 3) return token;
+    if (token.endsWith('ies') && token.length > 4) return `${token.slice(0, -3)}y`;
+    if (token.endsWith('oes') && token.length > 4) return token.slice(0, -2);
+    if (/(ses|xes|zes|ches|shes)$/.test(token) && token.length > 4) return token.slice(0, -2);
+    if (token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+    return token;
+  };
+
+  return tokens.map(singularize).join(' ').trim();
 }
 
 export function normalizeUnit(unit?: string) {

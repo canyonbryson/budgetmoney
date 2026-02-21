@@ -7,13 +7,13 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { ClerkLoaded, ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import * as SecureStore from 'expo-secure-store'
 import { ConvexReactClient } from 'convex/react';
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { SettingsProvider, useSettings } from '@/contexts/SettingsContext';
 import { IdentityProvider } from '@/contexts/IdentityContext';
 import { LocalDbProvider } from '@/contexts/LocalDbContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { secureDeleteItem, secureGetItem, secureSetItem } from '@/lib/secureStore';
 import { resolveTheme } from '@/constants/themes';
 import type { ColorScheme } from '@/constants/themes';
 
@@ -65,7 +65,7 @@ if (!publishableKey) {
 const tokenCache = {
   async getToken(key: string) {
     try {
-      const item = await SecureStore.getItemAsync(key)
+      const item = await secureGetItem(key)
       if (item) {
         console.log(`${key} was used 🔐 \n`)
       } else {
@@ -74,13 +74,13 @@ const tokenCache = {
       return item
     } catch (error) {
       console.error('SecureStore get item error: ', error)
-      await SecureStore.deleteItemAsync(key)
+      await secureDeleteItem(key)
       return null
     }
   },
   async saveToken(key: string, value: string) {
     try {
-      return SecureStore.setItemAsync(key, value)
+      return secureSetItem(key, value)
     } catch (err) {
       return
     }
@@ -88,7 +88,7 @@ const tokenCache = {
 }
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function InnerApp() {
   const colorScheme = useColorScheme();
@@ -119,7 +119,7 @@ function InnerApp() {
 
   React.useEffect(() => {
     if (loaded) {
-      SplashScreen.hideAsync();
+      void SplashScreen.hideAsync().catch(() => {});
     }
   }, [loaded]);
 
@@ -143,18 +143,37 @@ function InnerApp() {
             <ThemeProvider theme={resolvedAppTheme}>
               <NavThemeProvider value={effectiveNavTheme}>
                 <Stack>
+                  <Stack.Screen name="index" options={{ headerShown: false }} />
+                  <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
                   <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                   <Stack.Screen name="(auth)" options={{ headerShown: false }} />
                   <Stack.Screen name="+not-found" />
                   <Stack.Screen name="(screens)/accounts" options={{ title: "Accounts" }} />
+                  <Stack.Screen name="(screens)/net-worth" options={{ title: "Net worth" }} />
                   <Stack.Screen name="(screens)/receipts" options={{ title: "Receipts" }} />
                   <Stack.Screen name="(screens)/receipt/[receiptId]" options={{ title: "Receipt" }} />
                   <Stack.Screen name="(screens)/categories" options={{ title: "Categories" }} />
                   <Stack.Screen name="(screens)/budget-allocate/[categoryId]" options={{ title: "Allocate budget" }} />
+                  <Stack.Screen name="(screens)/budget-setup/index" options={{ title: "Budget setup" }} />
+                  <Stack.Screen name="(screens)/budget-setup/templates" options={{ title: "Choose template" }} />
+                  <Stack.Screen name="(screens)/budget-setup/cycle" options={{ title: "Budget cycle", headerBackVisible: false }} />
+                  <Stack.Screen name="(screens)/budget-setup/income" options={{ title: "Income", headerBackVisible: false }} />
+                  <Stack.Screen name="(screens)/budget-setup/categories" options={{ title: "Categories", headerBackVisible: false }} />
+                  <Stack.Screen name="(screens)/budget-setup/allocation" options={{ title: "Allocation", headerBackVisible: false }} />
+                  <Stack.Screen name="(screens)/budget-setup/carryover" options={{ title: "Carryover", headerBackVisible: false }} />
+                  <Stack.Screen name="(screens)/budget-setup/amounts" options={{ title: "Amounts" }} />
+                  <Stack.Screen name="(screens)/budget-setup/review" options={{ title: "Review", headerBackVisible: false }} />
                   <Stack.Screen name="(screens)/recipes" options={{ title: "Recipes" }} />
                   <Stack.Screen name="(screens)/meal-plan" options={{ title: "Meal plan" }} />
+                  <Stack.Screen name="(screens)/meal-plan-setup/index" options={{ title: "Plan your week" }} />
+                  <Stack.Screen name="(screens)/meal-plan-setup/plan" options={{ title: "Weekly plan" }} />
+                  <Stack.Screen name="(screens)/meal-plan-setup/pick-meal" options={{ title: "Pick a meal" }} />
+                  <Stack.Screen name="(screens)/meal-plan-setup/review" options={{ title: "Review plan" }} />
                   <Stack.Screen name="(screens)/shopping-list" options={{ title: "Shopping list" }} />
                   <Stack.Screen name="(screens)/pantry" options={{ title: "Pantry" }} />
+                  <Stack.Screen name="(screens)/family" options={{ title: "Family" }} />
+                  <Stack.Screen name="(screens)/family-invite" options={{ title: "Invite Family" }} />
+                  <Stack.Screen name="(screens)/family-accept/[token]" options={{ title: "Accept Invite" }} />
                 </Stack>
               </NavThemeProvider>
             </ThemeProvider>
