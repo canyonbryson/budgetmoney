@@ -116,12 +116,46 @@ describe('ShoppingListScreen', () => {
   });
 
   it('does not toggle checked state when tapping move-to-pantry button', async () => {
-    const { getByText } = render(<ShoppingListScreen />);
+    const { getByLabelText, getByText } = render(<ShoppingListScreen />);
 
     fireEvent.press(getByText('Checked'));
-    fireEvent.press(getByText('Move to pantry').parent as any);
+    fireEvent.press(getByLabelText('Move to pantry'));
 
     expect(mockMoveToPantry).toHaveBeenCalledTimes(1);
     expect(mockSetChecked).not.toHaveBeenCalled();
+  });
+
+  it('renders source-aware estimate labels for walmart and ai prices', () => {
+    mockUseQuery.mockReturnValue({
+      items: [
+        {
+          _id: 'item_walmart',
+          itemName: 'Onion',
+          quantity: 1,
+          unit: 'ea',
+          estimatedCost: 1.2,
+          isChecked: false,
+          coverage: 'none',
+          priceSource: 'walmart',
+        },
+        {
+          _id: 'item_ai',
+          itemName: 'Celery',
+          quantity: 1,
+          unit: 'ea',
+          estimatedCost: 1.8,
+          isChecked: false,
+          coverage: 'none',
+          priceSource: 'ai',
+          estimateConfidence: 0.3,
+        },
+      ],
+      totalEstimatedCost: 3,
+    });
+
+    const { getByText } = render(<ShoppingListScreen />);
+
+    expect(getByText('Walmart estimate')).toBeTruthy();
+    expect(getByText('AI estimate (Low confidence)')).toBeTruthy();
   });
 });

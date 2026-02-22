@@ -1,4 +1,4 @@
-import { roundQuantity } from '../lib/normalize';
+import { normalizeQuantity, roundQuantity } from '../lib/normalize';
 import { callOpenAIJson } from '../openai';
 
 export type ShoppingListMergeItemDraft = {
@@ -86,13 +86,108 @@ export const SHOPPING_LIST_MERGE_SCHEMA = {
   },
 } as const;
 
+const LEADING_PACK_WORDS = new Set(['can', 'cans', 'package', 'packages', 'pkg', 'pkgs', 'rib', 'ribs']);
+const PREP_WORDS = new Set([
+  'about',
+  'finely',
+  'roughly',
+  'thinly',
+  'thickly',
+  'small',
+  'medium',
+  'large',
+  'fresh',
+  'freshly',
+  'ground',
+  'crushed',
+  'chopped',
+  'minced',
+  'diced',
+  'shredded',
+  'grated',
+  'peeled',
+  'seeded',
+  'cubed',
+  'sliced',
+  'boneless',
+  'skinless',
+  'cooked',
+  'uncooked',
+  'juice',
+  'with',
+  'the',
+  'to',
+  'taste',
+]);
+const STYLE_PREFIX_WORDS = new Set(['diced', 'crushed']);
+
 function normalizeName(value?: string | null) {
   if (!value) return '';
-  return value
+  const tokens = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => singularize(token));
+  return tokens
+    .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function singularize(token: string) {
+  if (token.length <= 3) return token;
+  if (token.endsWith('ies') && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (token.endsWith('oes') && token.length > 4) return token.slice(0, -2);
+  if (/(ses|xes|zes|ches|shes)$/.test(token) && token.length > 4) return token.slice(0, -2);
+  if (token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+  return token;
+}
+
+function cleanupIngredientName(raw: string) {
+  const withoutMalformedParens = raw.replace(/\(\s*,/g, '(');
+  const withoutParentheticals = withoutMalformedParens.replace(/\([^)]*\)/g, ' ');
+  const withoutFractions = withoutParentheticals
+    .replace(/\b\d+\s*\/\s*\d+\b/g, ' ')
+    .replace(/\b\d+(\.\d+)?\b/g, ' ');
+  const firstToken = withoutFractions
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]+/g, ' ')
+    .trim()
+    .split(/\s+/)[0];
+  const keepFirstStyleWord = firstToken ? STYLE_PREFIX_WORDS.has(firstToken) : false;
+
+  const tokens = withoutFractions
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token, index) => {
+      if (!PREP_WORDS.has(token)) return true;
+      return index === 0 && keepFirstStyleWord;
+    });
+
+  while (tokens.length > 1 && LEADING_PACK_WORDS.has(tokens[0])) {
+    tokens.shift();
+  }
+
+  const normalizedTokens = tokens.length === 1 ? [singularize(tokens[0])] : tokens;
+  return normalizedTokens.join(' ').trim();
+}
+
+function normalizeUnitKindKey(quantity?: number | null, unit?: string) {
+  const cleanedUnit = toOptionalString(unit);
+  const normalized = normalizeQuantity(quantity ?? undefined, unit);
+  if (normalized.kind === 'unknown') {
+    return {
+      key: `unknown:${(cleanedUnit ?? '').toLowerCase()}`,
+      unit: cleanedUnit,
+    };
+  }
+  return {
+    key: normalized.kind,
+    unit: cleanedUnit ?? normalized.unit,
+  };
 }
 
 function toOptionalString(value: unknown) {
@@ -110,11 +205,14 @@ export function normalizeMergedShoppingListItems(
   fallbackDraft: ShoppingListMergeItemDraft[]
 ): ShoppingListMergeItemDraft[] {
   const safeFallback = fallbackDraft
-    .map((item) => ({
-      itemName: item.itemName?.trim() ?? '',
-      quantity: toOptionalNumber(item.quantity),
-      unit: toOptionalString(item.unit),
-    }))
+    .map((item) => {
+      const cleanedName = cleanupIngredientName(item.itemName ?? '');
+      return {
+        itemName: cleanedName || item.itemName?.trim() || '',
+        quantity: toOptionalNumber(item.quantity),
+        unit: toOptionalString(item.unit),
+      };
+    })
     .filter((item) => item.itemName.length > 0);
 
   if (!aiItems?.length) {
@@ -131,21 +229,25 @@ export function normalizeMergedShoppingListItems(
   const merged = new Map<string, Aggregated>();
 
   for (const aiItem of aiItems) {
-    const itemName =
-      toOptionalString(aiItem.display_name) ??
-      toOptionalString(aiItem.canonical_name) ??
-      undefined;
+    const canonicalName = cleanupIngredientName(
+      toOptionalString(aiItem.canonical_name) ?? toOptionalString(aiItem.display_name) ?? ''
+    );
+    const displayName = cleanupIngredientName(
+      toOptionalString(aiItem.display_name) ?? toOptionalString(aiItem.canonical_name) ?? ''
+    );
+
+    const itemName = canonicalName || displayName;
     if (!itemName) continue;
 
-    const canonical = normalizeName(aiItem.canonical_name) || normalizeName(itemName);
-    const unit = toOptionalString(aiItem.unit);
-    const key = `${canonical}:${unit ?? ''}`;
+    const canonical = normalizeName(canonicalName || itemName);
+    const unitKind = normalizeUnitKindKey(aiItem.quantity, toOptionalString(aiItem.unit));
+    const key = `${canonical}:${unitKind.key}`;
 
     const current = merged.get(key) ?? {
       itemName,
       quantity: 0,
       hasUnknownQuantity: false,
-      unit,
+      unit: unitKind.unit,
     };
 
     const quantity = toOptionalNumber(aiItem.quantity);
@@ -156,7 +258,7 @@ export function normalizeMergedShoppingListItems(
     }
 
     if (!current.itemName) current.itemName = itemName;
-    if (!current.unit && unit) current.unit = unit;
+    if (!current.unit && unitKind.unit) current.unit = unitKind.unit;
 
     merged.set(key, current);
   }
@@ -174,9 +276,11 @@ export function normalizeMergedShoppingListItems(
 export function buildShoppingListMergePrompts(context: ShoppingListMergeContext) {
   const systemPrompt = [
     'You are a precise grocery shopping list optimizer.',
-    'Combine duplicate ingredients across meals into one list.',
-    'Use pantry context to omit ingredients that are fully covered by pantry inventory.',
-    'Keep quantities realistic and avoid inventing ingredients.',
+    'Canonicalize ingredient names into clean grocery nouns suitable for a shopping list.',
+    'Strip preparation and note text such as finely diced, chopped, with the juice, and parenthetical comments.',
+    'Example bad to good: "cans diced tomatoes (, with the juice)" => "diced tomatoes".',
+    'Example bad to good: "carrots (, finely diced (about 1 cup))" => "carrot".',
+    'Combine duplicate and near-duplicate ingredients across meals into one list.',
     'If quantity is unknown, set it to null.',
     'Return strictly valid JSON that matches the schema.',
   ].join(' ');

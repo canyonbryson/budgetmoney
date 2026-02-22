@@ -1,13 +1,20 @@
 import { normalizeQuantity } from '../lib/normalize';
 import { callOpenAIJson } from '../openai';
 
-export type PriceSource = 'receipt' | 'winco' | 'online' | 'ai' | 'missing';
+export type PriceSource =
+  | 'receipt'
+  | 'walmart'
+  | 'ai'
+  | 'missing'
+  | 'online'
+  | 'winco';
 
 export type ItemPriceEvidence = {
   receiptUnitPrice?: number;
-  wincoUnitPrice?: number;
-  onlineUnitPrice?: number;
+  walmartUnitPrice?: number;
   aiUnitPrice?: number;
+  legacyOnlineUnitPrice?: number;
+  legacyWincoUnitPrice?: number;
 };
 
 export type PricingEvidenceInput = {
@@ -91,9 +98,10 @@ function normalizeName(value?: string) {
 function normalizeSource(source?: string): PriceSource {
   const normalized = (source ?? '').trim().toLowerCase();
   if (normalized === 'receipt') return 'receipt';
-  if (normalized === 'winco') return 'winco';
-  if (normalized === 'online') return 'online';
+  if (normalized === 'walmart') return 'walmart';
   if (normalized === 'ai') return 'ai';
+  if (normalized === 'online') return 'online';
+  if (normalized === 'winco') return 'winco';
   return 'missing';
 }
 
@@ -104,43 +112,48 @@ export function chooseBestPriceEvidence(evidence: ItemPriceEvidence): {
   if (typeof evidence.receiptUnitPrice === 'number' && Number.isFinite(evidence.receiptUnitPrice)) {
     return { unitPrice: evidence.receiptUnitPrice, source: 'receipt' };
   }
-  if (typeof evidence.wincoUnitPrice === 'number' && Number.isFinite(evidence.wincoUnitPrice)) {
-    return { unitPrice: evidence.wincoUnitPrice, source: 'winco' };
-  }
-  if (typeof evidence.onlineUnitPrice === 'number' && Number.isFinite(evidence.onlineUnitPrice)) {
-    return { unitPrice: evidence.onlineUnitPrice, source: 'online' };
+  if (typeof evidence.walmartUnitPrice === 'number' && Number.isFinite(evidence.walmartUnitPrice)) {
+    return { unitPrice: evidence.walmartUnitPrice, source: 'walmart' };
   }
   if (typeof evidence.aiUnitPrice === 'number' && Number.isFinite(evidence.aiUnitPrice)) {
     return { unitPrice: evidence.aiUnitPrice, source: 'ai' };
   }
+  if (
+    typeof evidence.legacyOnlineUnitPrice === 'number' &&
+    Number.isFinite(evidence.legacyOnlineUnitPrice)
+  ) {
+    return { unitPrice: evidence.legacyOnlineUnitPrice, source: 'online' };
+  }
+  if (
+    typeof evidence.legacyWincoUnitPrice === 'number' &&
+    Number.isFinite(evidence.legacyWincoUnitPrice)
+  ) {
+    return { unitPrice: evidence.legacyWincoUnitPrice, source: 'winco' };
+  }
   return { source: 'missing' };
 }
 
-export function estimateLineCostFromUnitPrice(
-  unitPrice: number,
-  quantity?: number,
-  unit?: string
-) {
+export function estimateLineCostFromUnitPrice(unitPrice: number, quantity?: number, unit?: string) {
   if (!Number.isFinite(unitPrice)) return 0;
 
   const normalized = normalizeQuantity(quantity, unit);
   if (normalized.quantity === undefined) {
     return roundCurrency(unitPrice);
   }
-
   if (normalized.kind === 'count') {
     return roundCurrency(unitPrice * Math.max(1, normalized.quantity));
   }
 
-  if (typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 && quantity <= 24) {
-    return roundCurrency(unitPrice * quantity);
-  }
+  const rawQuantity = typeof quantity === 'number' && Number.isFinite(quantity) ? quantity : 1;
+  return roundCurrency(unitPrice * Math.max(1, rawQuantity));
+}
 
-  if (normalized.kind === 'volume' || normalized.kind === 'mass') {
-    return roundCurrency(unitPrice * Math.max(1, normalized.quantity / 500));
-  }
-
-  return roundCurrency(unitPrice * Math.max(1, normalized.quantity));
+function fallbackConfidence(source: PriceSource) {
+  if (source === 'receipt') return 0.98;
+  if (source === 'walmart') return 0.78;
+  if (source === 'ai') return 0.35;
+  if (source === 'online' || source === 'winco') return 0.45;
+  return 0;
 }
 
 export function finalizePricingFromEvidence(inputs: PricingEvidenceInput[]): PricingEstimateResult {
@@ -154,6 +167,7 @@ export function finalizePricingFromEvidence(inputs: PricingEvidenceInput[]): Pri
         quantity: input.quantity,
         unit: input.unit,
         source: 'missing',
+        confidence: 0,
       };
     }
 
@@ -165,6 +179,7 @@ export function finalizePricingFromEvidence(inputs: PricingEvidenceInput[]): Pri
       unitPrice: selected.unitPrice,
       estimatedCost: estimateLineCostFromUnitPrice(selected.unitPrice, input.quantity, input.unit),
       source: selected.source,
+      confidence: fallbackConfidence(selected.source),
     };
   });
 
@@ -182,8 +197,8 @@ export function finalizePricingFromEvidence(inputs: PricingEvidenceInput[]): Pri
 function buildPricePrompts(contextLabel: string, fallback: PricingEstimateResult) {
   const systemPrompt = [
     'You estimate grocery prices using provided evidence.',
-    'Use receipt evidence first, then store-specific web prices, then fallback online prices.',
-    'Do not invent outlier prices. Keep outputs realistic and consistent with provided evidence.',
+    'Source priority is: recent receipt history, Walmart price evidence, then AI inferred estimate.',
+    'Do not use external providers other than Walmart evidence already provided in context.',
     'If uncertain, lower confidence and explain briefly in rationale.',
     'Return strictly valid JSON that matches the schema.',
   ].join(' ');
@@ -198,6 +213,7 @@ function buildPricePrompts(contextLabel: string, fallback: PricingEstimateResult
       fallback_unit_price: item.unitPrice ?? null,
       fallback_line_estimate: item.estimatedCost ?? null,
       fallback_source: item.source,
+      fallback_confidence: item.confidence ?? null,
     })),
   };
 
@@ -239,9 +255,7 @@ export async function estimatePricingWithAi(args: {
       maxOutputTokens: 2000,
     });
 
-    const aiIndex = new Map(
-      (parsed.items ?? []).map((item) => [normalizeName(item.canonical_name), item])
-    );
+    const aiIndex = new Map((parsed.items ?? []).map((item) => [normalizeName(item.canonical_name), item]));
 
     const items = fallback.items.map((item) => {
       const key = normalizeName(item.canonicalName ?? item.itemName);
@@ -278,9 +292,10 @@ export async function estimatePricingWithAi(args: {
     );
 
     return {
-      currency: typeof parsed.currency === 'string' && parsed.currency.trim().length
-        ? parsed.currency.trim().toUpperCase()
-        : fallback.currency,
+      currency:
+        typeof parsed.currency === 'string' && parsed.currency.trim().length
+          ? parsed.currency.trim().toUpperCase()
+          : fallback.currency,
       items,
       totalEstimatedCost,
     };

@@ -9,7 +9,7 @@ GroceryBudget is a personal budgeting app built with Expo + Convex + Clerk. It c
 - Transaction categorization (rules → MCC/keyword → AI fallback)
 - Receipts (camera only) with AI parsing + transaction linking
 - Recipes (URL import) + meal planning + shopping list
-- Pricing per serving with recent purchase price or online lookup
+- Pricing per serving with recent purchase price, Walmart lookup, or AI fallback
 - Anonymous mode (no Plaid / no AI) with merge-on-sign-in
 
 ## Environment Variables
@@ -33,20 +33,17 @@ PLAID_SECRET=...
 PLAID_ENV=sandbox
 PLAID_WEBHOOK_URL=https://<your-webhook-host>/webhooks/plaid
 
-# Price lookup (Spoonacular)
-SPOONACULAR_API_KEY=...
-SPOONACULAR_BASE_URL=https://api.spoonacular.com
-SPOONACULAR_PRICE_UNIT=dollars
+# Walmart price lookup (shopping list + recipe estimates)
+WALMART_LOOKUP_ENABLED=true
+WALMART_API_BASE_URL=https://<your-walmart-endpoint>/search
+WALMART_API_KEY=...
+WALMART_API_KEY_HEADER=Authorization
+WALMART_API_HOST_HEADER=X-RapidAPI-Host
+WALMART_API_HOST_VALUE=<optional-host-value>
+WALMART_QUERY_PARAM=query
+WALMART_PRICE_UNIT=dollars
 
-# Optional WinCo lookup proxy/API
-WINCO_LOOKUP_ENABLED=false
-WINCO_LOOKUP_BASE_URL=https://<your-winco-proxy>/search?query={query}
-WINCO_LOOKUP_API_KEY=...
-WINCO_STORE_ID=...
-
-# Legacy generic price lookup (optional fallback)
-PRICE_LOOKUP_API_KEY=...
-PRICE_LOOKUP_BASE_URL=https://...
+# Legacy generic price lookup unit (optional)
 PRICE_LOOKUP_PRICE_UNIT=dollars
 
 # Recipe search (Spoonacular-compatible)

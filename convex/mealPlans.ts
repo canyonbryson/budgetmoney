@@ -19,8 +19,7 @@ import {
   type PricingEvidenceInput,
   type PriceSource,
 } from './ai/pricing';
-import { lookupSpoonacularPrice } from './priceProviders/spoonacular';
-import { lookupWincoPrice } from './priceProviders/winco';
+import { lookupWalmartPrice } from './priceProviders/walmart';
 
 function getWeekStart(date = new Date()) {
   const d = new Date(date);
@@ -69,20 +68,23 @@ function estimateCostFromUnitPrice(
 ) {
   const normalized = normalizeQuantity(quantity, unit);
   if (normalized.quantity === undefined) return roundCurrency(unitPrice);
-
-  let multiplier = 1;
   if (normalized.kind === 'count') {
-    multiplier = Math.max(1, Math.ceil(normalized.quantity));
-  } else if (normalized.kind === 'volume' || normalized.kind === 'mass') {
-    multiplier = Math.max(1, Math.ceil(normalized.quantity / 500));
+    return roundCurrency(unitPrice * Math.max(1, normalized.quantity));
   }
-
-  return roundCurrency(unitPrice * Math.min(multiplier, 6));
+  const rawQuantity = typeof quantity === 'number' && Number.isFinite(quantity) ? quantity : 1;
+  return roundCurrency(unitPrice * Math.max(1, rawQuantity));
 }
 
-function normalizePriceSource(source: PriceSource): 'receipt' | 'online' | 'winco' | 'ai' {
-  if (source === 'receipt' || source === 'winco' || source === 'ai') return source;
-  return 'online';
+function normalizePriceSource(
+  source: PriceSource
+): 'receipt' | 'walmart' | 'ai' {
+  if (source === 'receipt' || source === 'walmart' || source === 'ai') {
+    return source;
+  }
+  if (source === 'online' || source === 'winco') {
+    return 'walmart';
+  }
+  return 'ai';
 }
 
 export function resolveShoppingWeekStart(weekStart?: string) {
@@ -755,7 +757,13 @@ export const replaceShoppingListItemsForWeek = mutation({
         canonicalItemId: v.optional(v.id('canonicalItems')),
         estimatedCost: v.optional(v.number()),
         priceSource: v.optional(
-          v.union(v.literal('receipt'), v.literal('online'), v.literal('winco'), v.literal('ai'))
+          v.union(
+            v.literal('receipt'),
+            v.literal('walmart'),
+            v.literal('ai'),
+            v.literal('online'),
+            v.literal('winco')
+          )
         ),
         estimateConfidence: v.optional(v.number()),
         estimateSourceDetail: v.optional(v.string()),
@@ -888,7 +896,13 @@ export const applyShoppingListOnlinePrice = mutation({
     unitPrice: v.number(),
     currency: v.optional(v.string()),
     priceSource: v.optional(
-      v.union(v.literal('receipt'), v.literal('online'), v.literal('winco'), v.literal('ai'))
+      v.union(
+        v.literal('receipt'),
+        v.literal('walmart'),
+        v.literal('ai'),
+        v.literal('online'),
+        v.literal('winco')
+      )
     ),
     estimateConfidence: v.optional(v.number()),
     estimateSourceDetail: v.optional(v.string()),
@@ -904,7 +918,7 @@ export const applyShoppingListOnlinePrice = mutation({
 
     await ctx.db.patch(args.itemId, {
       estimatedCost: args.estimatedCost,
-      priceSource: args.priceSource ?? 'online',
+      priceSource: args.priceSource ?? 'walmart',
       estimateConfidence: args.estimateConfidence,
       estimateSourceDetail: args.estimateSourceDetail,
       estimateRationale: args.estimateRationale,
@@ -918,7 +932,7 @@ export const applyShoppingListOnlinePrice = mutation({
         canonicalItemId,
         price: args.unitPrice,
         currency: args.currency ?? 'USD',
-        source: args.priceSource ?? 'online',
+        source: args.priceSource ?? 'walmart',
         isEstimated: true,
         purchasedAt: Date.now(),
       });
@@ -1032,7 +1046,7 @@ export const generateShoppingList = action({
       process.env.OPENAI_SHOPPING_LIST_MODEL ??
       process.env.OPENAI_PRICE_MODEL ??
       process.env.OPENAI_MODEL ??
-      'gpt-4o-mini';
+      'gpt-5-mini';
 
     if (aiMergeEnabled && items.length) {
       const weekPlan: { weekStart: string; planningMode?: string; items: any[] } =
@@ -1154,23 +1168,21 @@ export const generateShoppingList = action({
       }
     }
 
-    const spoonacularBase =
-      process.env.SPOONACULAR_BASE_URL ??
-      process.env.PRICE_LOOKUP_BASE_URL ??
-      'https://api.spoonacular.com';
-    const spoonacularKey = process.env.SPOONACULAR_API_KEY ?? process.env.PRICE_LOOKUP_API_KEY;
+    const walmartBaseUrl = process.env.WALMART_API_BASE_URL;
+    const walmartApiKey = process.env.WALMART_API_KEY;
+    const walmartApiKeyHeader = process.env.WALMART_API_KEY_HEADER;
+    const walmartHostHeader = process.env.WALMART_API_HOST_HEADER;
+    const walmartHostValue = process.env.WALMART_API_HOST_VALUE;
+    const walmartQueryParam = process.env.WALMART_QUERY_PARAM;
     const priceUnitRaw =
-      process.env.SPOONACULAR_PRICE_UNIT ?? process.env.PRICE_LOOKUP_PRICE_UNIT;
+      process.env.WALMART_PRICE_UNIT ??
+      process.env.PRICE_LOOKUP_PRICE_UNIT;
     const priceUnit =
       priceUnitRaw === 'cents' || priceUnitRaw === 'dollars' ? priceUnitRaw : undefined;
-
-    const wincoEnabled =
+    const walmartEnabled =
       canUsePaidFeatures &&
-      isFeatureEnabled(process.env.WINCO_LOOKUP_ENABLED, false) &&
-      Boolean(process.env.WINCO_LOOKUP_BASE_URL);
-    const wincoBaseUrl = process.env.WINCO_LOOKUP_BASE_URL;
-    const wincoApiKey = process.env.WINCO_LOOKUP_API_KEY;
-    const wincoStoreId = process.env.WINCO_STORE_ID;
+      isFeatureEnabled(process.env.WALMART_LOOKUP_ENABLED, false) &&
+      Boolean(walmartBaseUrl);
 
     if (!canUsePaidFeatures) {
       return { status: 'ok', planId, onlineLookups: 0 };
@@ -1197,12 +1209,16 @@ export const generateShoppingList = action({
             canonicalItemId: item.canonicalItemId,
           });
           if (fallback?.price !== undefined && fallback?.price !== null) {
-            if (fallback.source === 'winco') {
-              evidence.wincoUnitPrice = fallback.price;
-            } else if (fallback.source === 'receipt' && !fallback.isEstimated) {
+            if (fallback.source === 'receipt' && !fallback.isEstimated) {
               evidence.receiptUnitPrice = fallback.price;
+            } else if (fallback.source === 'walmart') {
+              evidence.walmartUnitPrice = fallback.price;
+            } else if (fallback.source === 'ai') {
+              evidence.aiUnitPrice = fallback.price;
+            } else if (fallback.source === 'winco') {
+              evidence.legacyWincoUnitPrice = fallback.price;
             } else {
-              evidence.onlineUnitPrice = fallback.price;
+              evidence.legacyOnlineUnitPrice = fallback.price;
             }
           }
         }
@@ -1210,44 +1226,26 @@ export const generateShoppingList = action({
 
       if (
         evidence.receiptUnitPrice === undefined &&
-        evidence.wincoUnitPrice === undefined &&
-        wincoEnabled &&
-        wincoBaseUrl
+        evidence.walmartUnitPrice === undefined &&
+        walmartEnabled &&
+        walmartBaseUrl
       ) {
         try {
-          const winco = await lookupWincoPrice(item.itemName, {
-            baseUrl: wincoBaseUrl,
-            apiKey: wincoApiKey,
-            storeId: wincoStoreId,
+          const walmart = await lookupWalmartPrice(item.itemName, {
+            baseUrl: walmartBaseUrl,
+            apiKey: walmartApiKey,
+            apiKeyHeader: walmartApiKeyHeader,
+            hostHeader: walmartHostHeader,
+            hostValue: walmartHostValue,
+            queryParam: walmartQueryParam,
             priceUnit,
           });
-          if (winco.price !== undefined && winco.price !== null) {
-            evidence.wincoUnitPrice = normalizePrice(winco.price, winco.priceUnit);
+          if (walmart.price !== undefined && walmart.price !== null) {
+            evidence.walmartUnitPrice = normalizePrice(walmart.price, walmart.priceUnit);
             onlineLookups += 1;
           }
         } catch {
-          // Ignore WinCo lookup failures.
-        }
-      }
-
-      if (
-        evidence.receiptUnitPrice === undefined &&
-        evidence.wincoUnitPrice === undefined &&
-        evidence.onlineUnitPrice === undefined &&
-        spoonacularKey
-      ) {
-        try {
-          const result = await lookupSpoonacularPrice(item.itemName, {
-            apiKey: spoonacularKey,
-            baseUrl: spoonacularBase,
-            priceUnit,
-          });
-          if (result.price !== undefined && result.price !== null) {
-            evidence.onlineUnitPrice = normalizePrice(result.price, result.priceUnit);
-            onlineLookups += 1;
-          }
-        } catch {
-          // Ignore fallback lookup failures.
+          // Ignore Walmart lookup failures and fall back to AI estimate.
         }
       }
 
@@ -1299,15 +1297,20 @@ export const generateShoppingList = action({
         unitPrice,
         currency: pricing.currency,
         priceSource: normalizePriceSource(estimate.source),
-        estimateConfidence: estimate.confidence,
+        estimateConfidence:
+          estimate.source === 'ai'
+            ? Math.min(estimate.confidence ?? 0.35, 0.49)
+            : estimate.confidence,
         estimateSourceDetail:
-          estimate.source === 'winco'
-            ? 'winco'
-            : estimate.source === 'online'
-              ? 'fallback_online'
-              : estimate.source,
+          estimate.source === 'online'
+            ? 'legacy_online'
+            : estimate.source === 'winco'
+              ? 'legacy_winco'
+              : estimate.source === 'ai'
+                ? 'ai_inferred'
+                : estimate.source,
         estimateRationale: estimate.rationale,
-        persistPriceRecord: estimate.source !== 'receipt',
+        persistPriceRecord: estimate.source !== 'receipt' && estimate.source !== 'missing',
       });
     }
 

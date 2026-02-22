@@ -413,7 +413,13 @@ export default defineSchema({
     unit: v.optional(v.string()),
     estimatedCost: v.optional(v.number()),
     priceSource: v.optional(
-      v.union(v.literal('receipt'), v.literal('online'), v.literal('winco'), v.literal('ai'))
+      v.union(
+        v.literal('receipt'),
+        v.literal('walmart'),
+        v.literal('ai'),
+        v.literal('online'),
+        v.literal('winco')
+      )
     ),
     estimateConfidence: v.optional(v.number()),
     estimateSourceDetail: v.optional(v.string()),

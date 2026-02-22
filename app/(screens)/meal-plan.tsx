@@ -156,6 +156,20 @@ export default function MealPlanScreen() {
     return formatMoney(value);
   };
 
+  const getPriceSourceLabel = (item: any) => {
+    if (item.priceSource === 'walmart' || item.priceSource === 'online' || item.priceSource === 'winco') {
+      return t(language, 'walmartEstimate');
+    }
+    if (item.priceSource === 'ai') {
+      const lowConfidence =
+        typeof item.estimateConfidence === 'number' && item.estimateConfidence < 0.5;
+      return lowConfidence
+        ? `${t(language, 'aiEstimate')} (${t(language, 'lowConfidence')})`
+        : t(language, 'aiEstimate');
+    }
+    return null;
+  };
+
   const dayOptions = [
     { value: 'Mon', label: t(language, 'mondayShort') },
     { value: 'Tue', label: t(language, 'tuesdayShort') },
@@ -341,8 +355,10 @@ export default function MealPlanScreen() {
                       {formatQuantity(item.quantity, item.unit)}
                     </ThemedText>
                   ) : null}
-                  {item.priceSource === 'online' ? (
-                    <ThemedText style={{ color: colors.textMuted, fontSize: 12 }}>{t(language, 'onlineEstimate')}</ThemedText>
+                  {getPriceSourceLabel(item) ? (
+                    <ThemedText style={{ color: colors.textMuted, fontSize: 12 }}>
+                      {getPriceSourceLabel(item)}
+                    </ThemedText>
                   ) : null}
                 </ThemedView>
                 <ThemedText>{formatCurrency(item.estimatedCost)}</ThemedText>

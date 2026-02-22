@@ -4,8 +4,7 @@ import { Doc } from './_generated/dataModel';
 import { api } from './_generated/api';
 import { ownerArgs, resolveOwner, requireSignedIn, type Owner } from './ownership';
 import { callOpenAIJson } from './openai';
-import { lookupSpoonacularPrice } from './priceProviders/spoonacular';
-import { lookupWincoPrice } from './priceProviders/winco';
+import { lookupWalmartPrice } from './priceProviders/walmart';
 import {
   estimatePricingWithAi,
   finalizePricingFromEvidence,
@@ -1187,14 +1186,14 @@ export const estimateCost = action({
     onlineCount: number;
     missingCount: number;
     confidence: number;
-    sources: { source: 'receipt' | 'online' | 'missing'; count: number }[];
+    sources: { source: 'receipt' | 'walmart' | 'ai' | 'missing'; count: number }[];
   }> => {
     const owner = await resolveOwner(ctx, args);
     const detail: { recipe: Doc<'recipes'>; ingredients: Doc<'recipeIngredients'>[] } | null =
       await ctx.runQuery(api.recipes.getDetail, {
-      ownerType: owner.ownerType,
-      ownerId: owner.ownerId,
-      recipeId: args.recipeId,
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        recipeId: args.recipeId,
       });
     if (!detail) throw new Error('Recipe not found');
 
@@ -1205,22 +1204,20 @@ export const estimateCost = action({
       canLookup = false;
     }
 
-    const base =
-      process.env.SPOONACULAR_BASE_URL ??
-      process.env.PRICE_LOOKUP_BASE_URL ??
-      'https://api.spoonacular.com';
-    const key = process.env.SPOONACULAR_API_KEY ?? process.env.PRICE_LOOKUP_API_KEY;
+    const walmartBaseUrl = process.env.WALMART_API_BASE_URL;
+    const walmartApiKey = process.env.WALMART_API_KEY;
+    const walmartApiKeyHeader = process.env.WALMART_API_KEY_HEADER;
+    const walmartHostHeader = process.env.WALMART_API_HOST_HEADER;
+    const walmartHostValue = process.env.WALMART_API_HOST_VALUE;
+    const walmartQueryParam = process.env.WALMART_QUERY_PARAM;
     const priceUnitRaw =
-      process.env.SPOONACULAR_PRICE_UNIT ?? process.env.PRICE_LOOKUP_PRICE_UNIT;
+      process.env.WALMART_PRICE_UNIT ?? process.env.PRICE_LOOKUP_PRICE_UNIT;
     const priceUnit =
       priceUnitRaw === 'cents' || priceUnitRaw === 'dollars' ? priceUnitRaw : undefined;
-    const wincoEnabled =
+    const walmartEnabled =
       canLookup &&
-      isFeatureEnabled(process.env.WINCO_LOOKUP_ENABLED, false) &&
-      Boolean(process.env.WINCO_LOOKUP_BASE_URL);
-    const wincoBaseUrl = process.env.WINCO_LOOKUP_BASE_URL;
-    const wincoApiKey = process.env.WINCO_LOOKUP_API_KEY;
-    const wincoStoreId = process.env.WINCO_STORE_ID;
+      isFeatureEnabled(process.env.WALMART_LOOKUP_ENABLED, false) &&
+      Boolean(walmartBaseUrl);
 
     const pricingInputs: PricingEvidenceInput[] = [];
     const maxLookups = 14;
@@ -1246,10 +1243,14 @@ export const estimateCost = action({
           if (fallback?.price !== undefined && fallback?.price !== null) {
             if (fallback.source === 'receipt' && !fallback.isEstimated) {
               evidence.receiptUnitPrice = fallback.price;
+            } else if (fallback.source === 'walmart') {
+              evidence.walmartUnitPrice = fallback.price;
+            } else if (fallback.source === 'ai') {
+              evidence.aiUnitPrice = fallback.price;
             } else if (fallback.source === 'winco') {
-              evidence.wincoUnitPrice = fallback.price;
+              evidence.legacyWincoUnitPrice = fallback.price;
             } else {
-              evidence.onlineUnitPrice = fallback.price;
+              evidence.legacyOnlineUnitPrice = fallback.price;
             }
           }
         }
@@ -1257,9 +1258,10 @@ export const estimateCost = action({
 
       if (
         evidence.receiptUnitPrice === undefined &&
-        evidence.wincoUnitPrice === undefined &&
-        evidence.onlineUnitPrice === undefined &&
+        evidence.walmartUnitPrice === undefined &&
         canLookup &&
+        walmartEnabled &&
+        walmartBaseUrl &&
         usedLookups < maxLookups
       ) {
         const lookupQueries = buildIngredientLookupQueries(ingredient.name);
@@ -1267,72 +1269,33 @@ export const estimateCost = action({
           if (usedLookups >= maxLookups) break;
           usedLookups += 1;
 
-          if (wincoEnabled && wincoBaseUrl && evidence.wincoUnitPrice === undefined) {
-            try {
-              const winco = await lookupWincoPrice(lookupQuery, {
-                baseUrl: wincoBaseUrl,
-                apiKey: wincoApiKey,
-                storeId: wincoStoreId,
-                priceUnit,
-              });
-              if (winco.price !== undefined && winco.price !== null) {
-                evidence.wincoUnitPrice = normalizePrice(winco.price, winco.priceUnit);
-              }
-            } catch {
-              // Ignore WinCo lookup failures.
+          try {
+            const walmart = await lookupWalmartPrice(lookupQuery, {
+              baseUrl: walmartBaseUrl,
+              apiKey: walmartApiKey,
+              apiKeyHeader: walmartApiKeyHeader,
+              hostHeader: walmartHostHeader,
+              hostValue: walmartHostValue,
+              queryParam: walmartQueryParam,
+              priceUnit,
+            });
+            if (walmart.price !== undefined && walmart.price !== null) {
+              evidence.walmartUnitPrice = normalizePrice(walmart.price, walmart.priceUnit);
             }
+          } catch {
+            // Ignore Walmart lookup failures.
           }
 
-          if (
-            evidence.receiptUnitPrice === undefined &&
-            evidence.wincoUnitPrice === undefined &&
-            evidence.onlineUnitPrice === undefined &&
-            key
-          ) {
-            try {
-              const result = await lookupSpoonacularPrice(lookupQuery, {
-                apiKey: key,
-                baseUrl: base,
-                priceUnit,
-              });
-              if (result.price !== undefined && result.price !== null) {
-                evidence.onlineUnitPrice = normalizePrice(result.price, result.priceUnit);
-              }
-            } catch {
-              // Ignore fallback lookup failures.
-            }
-          }
-
-          if (
-            evidence.receiptUnitPrice !== undefined ||
-            evidence.wincoUnitPrice !== undefined ||
-            evidence.onlineUnitPrice !== undefined
-          ) {
+          if (evidence.receiptUnitPrice !== undefined || evidence.walmartUnitPrice !== undefined) {
             break;
           }
         }
       }
 
-      const selectedUnitPrice =
-        evidence.receiptUnitPrice ?? evidence.wincoUnitPrice ?? evidence.onlineUnitPrice;
-      if (
-        ingredient.normalizedItemId &&
-        selectedUnitPrice !== undefined &&
-        evidence.receiptUnitPrice === undefined
-      ) {
-        await ctx.runMutation(api.prices.recordOnlineEstimate, {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          canonicalItemId: ingredient.normalizedItemId,
-          price: selectedUnitPrice,
-          currency: 'USD',
-        });
-      }
-
       pricingInputs.push({
         itemName: ingredient.name,
         canonicalName: ingredient.name,
-        quantity: ingredient.quantity ?? 1,
+        quantity: ingredient.quantity ?? undefined,
         unit: ingredient.unit ?? undefined,
         evidence,
       });
@@ -1356,16 +1319,41 @@ export const estimateCost = action({
         })
       : finalizePricingFromEvidence(pricingInputs);
 
+    for (let index = 0; index < pricing.items.length; index += 1) {
+      const estimate = pricing.items[index];
+      const ingredient = detail.ingredients[index];
+      if (!ingredient?.normalizedItemId || estimate.unitPrice === undefined) continue;
+      if (estimate.source === 'missing' || estimate.source === 'receipt') continue;
+
+      const persistedSource =
+        estimate.source === 'ai' ? 'ai' : estimate.source === 'walmart' ? 'walmart' : 'walmart';
+
+      await ctx.runMutation(api.prices.recordPriceEstimate, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        canonicalItemId: ingredient.normalizedItemId,
+        price: estimate.unitPrice,
+        currency: pricing.currency ?? 'USD',
+        source: persistedSource,
+      });
+    }
+
     let receiptCount = 0;
     let onlineCount = 0;
     let missingCount = 0;
+    let walmartCount = 0;
+    let aiCount = 0;
     for (const item of pricing.items) {
       if (item.source === 'receipt') {
         receiptCount += 1;
+      } else if (item.source === 'walmart' || item.source === 'online' || item.source === 'winco') {
+        walmartCount += 1;
+        onlineCount += 1;
+      } else if (item.source === 'ai') {
+        aiCount += 1;
+        onlineCount += 1;
       } else if (item.source === 'missing') {
         missingCount += 1;
-      } else {
-        onlineCount += 1;
       }
     }
 
@@ -1373,8 +1361,25 @@ export const estimateCost = action({
     const servings = detail.recipe.servings ?? 1;
     const costPerServing = servings > 0 ? totalCost / servings : totalCost;
     const ingredientCount = detail.ingredients.length;
-    const confidenceRaw = ingredientCount > 0 ? (receiptCount + onlineCount * 0.6) / ingredientCount : 0;
+    const confidenceRaw =
+      ingredientCount > 0
+        ? (receiptCount + walmartCount * 0.75 + aiCount * 0.35) / ingredientCount
+        : 0;
     const confidence = Math.max(0, Math.min(1, confidenceRaw));
+
+    const costSources: string[] = [];
+    if (receiptCount > 0) costSources.push('receipt');
+    if (walmartCount > 0) costSources.push('walmart');
+    if (aiCount > 0) costSources.push('ai');
+
+    await ctx.runMutation(api.recipes.updateCostEstimate, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      recipeId: args.recipeId,
+      pricePerServing: roundCurrency(costPerServing),
+      costConfidence: confidence,
+      costSources,
+    });
 
     return {
       totalCost: roundCurrency(totalCost),
@@ -1386,9 +1391,34 @@ export const estimateCost = action({
       confidence,
       sources: [
         { source: 'receipt', count: receiptCount },
-        { source: 'online', count: onlineCount },
+        { source: 'walmart', count: walmartCount },
+        { source: 'ai', count: aiCount },
         { source: 'missing', count: missingCount },
       ],
     };
+  },
+});
+
+export const updateCostEstimate = mutation({
+  args: {
+    ...ownerArgs,
+    recipeId: v.id('recipes'),
+    pricePerServing: v.number(),
+    costConfidence: v.number(),
+    costSources: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const owner = await resolveOwner(ctx, args);
+    const recipe = await ctx.db.get(args.recipeId);
+    if (!recipe || recipe.ownerId !== owner.ownerId || recipe.ownerType !== owner.ownerType) {
+      throw new Error('Not authorized');
+    }
+
+    await ctx.db.patch(recipe._id, {
+      pricePerServing: args.pricePerServing,
+      costConfidence: args.costConfidence,
+      costSources: args.costSources,
+      updatedAt: Date.now(),
+    });
   },
 });

@@ -13,6 +13,8 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as ai_pricing from "../ai/pricing.js";
+import type * as ai_shoppingList from "../ai/shoppingList.js";
 import type * as analytics from "../analytics.js";
 import type * as budgets from "../budgets.js";
 import type * as categories from "../categories.js";
@@ -37,6 +39,8 @@ import type * as pantry from "../pantry.js";
 import type * as periods from "../periods.js";
 import type * as plaid from "../plaid.js";
 import type * as priceProviders_spoonacular from "../priceProviders/spoonacular.js";
+import type * as priceProviders_walmart from "../priceProviders/walmart.js";
+import type * as priceProviders_winco from "../priceProviders/winco.js";
 import type * as prices from "../prices.js";
 import type * as receipts from "../receipts.js";
 import type * as recipes from "../recipes.js";
@@ -54,6 +58,8 @@ import type * as users from "../users.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "ai/pricing": typeof ai_pricing;
+  "ai/shoppingList": typeof ai_shoppingList;
   analytics: typeof analytics;
   budgets: typeof budgets;
   categories: typeof categories;
@@ -78,6 +84,8 @@ declare const fullApi: ApiFromModules<{
   periods: typeof periods;
   plaid: typeof plaid;
   "priceProviders/spoonacular": typeof priceProviders_spoonacular;
+  "priceProviders/walmart": typeof priceProviders_walmart;
+  "priceProviders/winco": typeof priceProviders_winco;
   prices: typeof prices;
   receipts: typeof receipts;
   recipes: typeof recipes;

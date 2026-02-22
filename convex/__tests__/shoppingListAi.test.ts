@@ -13,8 +13,8 @@ describe('normalizeMergedShoppingListItems', () => {
     const result = normalizeMergedShoppingListItems([], draft);
 
     expect(result).toEqual([
-      { itemName: 'Milk', quantity: 1, unit: 'gallon' },
-      { itemName: 'Eggs', quantity: 12, unit: 'ea' },
+      { itemName: 'milk', quantity: 1, unit: 'gallon' },
+      { itemName: 'egg', quantity: 12, unit: 'ea' },
     ]);
   });
 
@@ -43,9 +43,78 @@ describe('normalizeMergedShoppingListItems', () => {
 
     expect(result).toEqual([
       {
-        itemName: 'Yellow Onion',
+        itemName: 'yellow onion',
         quantity: 3,
         unit: 'lb',
+      },
+    ]);
+  });
+
+  it('merges similar count units into one canonical item', () => {
+    const result = normalizeMergedShoppingListItems(
+      [
+        {
+          canonical_name: 'onion',
+          display_name: 'small onion (, finely diced (about 1 cup))',
+          quantity: 1,
+          unit: 'ea',
+          confidence: 0.9,
+          source_meals: ['Mon dinner'],
+        },
+        {
+          canonical_name: 'onions',
+          display_name: 'yellow onions',
+          quantity: 2,
+          unit: 'count',
+          confidence: 0.8,
+          source_meals: ['Tue dinner'],
+        },
+      ],
+      []
+    );
+
+    expect(result).toEqual([
+      {
+        itemName: 'onion',
+        quantity: 3,
+        unit: 'ea',
+      },
+    ]);
+  });
+
+  it('cleans malformed ingredient labels from parser noise', () => {
+    const result = normalizeMergedShoppingListItems(
+      [
+        {
+          canonical_name: 'diced tomatoes',
+          display_name: 'cans diced tomatoes (, with the juice)',
+          quantity: 2,
+          unit: 'can',
+          confidence: 0.9,
+          source_meals: ['Mon dinner'],
+        },
+        {
+          canonical_name: 'carrot',
+          display_name: 'carrots (, finely diced (about 1 cup))',
+          quantity: 2,
+          unit: 'ea',
+          confidence: 0.9,
+          source_meals: ['Mon dinner'],
+        },
+      ],
+      []
+    );
+
+    expect(result).toEqual([
+      {
+        itemName: 'diced tomatoes',
+        quantity: 2,
+        unit: 'can',
+      },
+      {
+        itemName: 'carrot',
+        quantity: 2,
+        unit: 'ea',
       },
     ]);
   });
@@ -67,7 +136,7 @@ describe('normalizeMergedShoppingListItems', () => {
 
     expect(result).toEqual([
       {
-        itemName: 'Salt',
+        itemName: 'salt',
         quantity: undefined,
         unit: undefined,
       },

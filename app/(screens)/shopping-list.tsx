@@ -157,6 +157,20 @@ export default function ShoppingListScreen() {
     return formatMoney(value);
   };
 
+  const getPriceSourceLabel = (item: any) => {
+    if (item.priceSource === 'walmart' || item.priceSource === 'online' || item.priceSource === 'winco') {
+      return t(language, 'walmartEstimate');
+    }
+    if (item.priceSource === 'ai') {
+      const lowConfidence =
+        typeof item.estimateConfidence === 'number' && item.estimateConfidence < 0.5;
+      return lowConfidence
+        ? `${t(language, 'aiEstimate')} (${t(language, 'lowConfidence')})`
+        : t(language, 'aiEstimate');
+    }
+    return null;
+  };
+
   const filteredItems = React.useMemo(() => {
     const list = isSignedIn ? shoppingList?.items : localShoppingList.data?.items;
     if (!list) return [];
@@ -362,7 +376,7 @@ export default function ShoppingListScreen() {
 
       {isSignedIn && !entitlements.canUseAi ? (
         <ThemedText style={[typography.caption, { color: colors.textMuted }]}>
-          {t(language, 'onlineEstimate')}
+          {t(language, 'walmartEstimate')}
         </ThemedText>
       ) : null}
 
@@ -550,6 +564,9 @@ export default function ShoppingListScreen() {
             const qtyLabel = formatQuantity(item.quantity, item.unit);
             const costLabel = formatCurrency(item.estimatedCost);
             const isPartial = item.coverage === 'partial' && item.remainingQuantity !== undefined;
+            const sourceLabel = getPriceSourceLabel(item);
+            const sourceIcon =
+              item.priceSource === 'ai' ? 'sparkles-outline' : 'storefront-outline';
 
             return (
               <Pressable
@@ -644,7 +661,7 @@ export default function ShoppingListScreen() {
                         </ThemedText>
                       </View>
                     ) : null}
-                    {item.priceSource === 'online' ? (
+                    {sourceLabel ? (
                       <View
                         style={[
                           styles.badge,
@@ -654,9 +671,9 @@ export default function ShoppingListScreen() {
                           },
                         ]}
                       >
-                        <Ionicons name="globe-outline" size={11} color={colors.textMuted} />
+                        <Ionicons name={sourceIcon} size={11} color={colors.textMuted} />
                         <ThemedText style={[typography.caption, { color: colors.textMuted }]}>
-                          {t(language, 'onlineEstimate')}
+                          {sourceLabel}
                         </ThemedText>
                       </View>
                     ) : null}
@@ -682,6 +699,7 @@ export default function ShoppingListScreen() {
                           e?.stopPropagation?.();
                           onMoveToPantry(item._id);
                         }}
+                        accessibilityLabel={t(language, 'moveToPantry')}
                         hitSlop={6}
                         style={[styles.actionIcon, { borderRadius: borderRadius.sm }]}
                       >
@@ -693,6 +711,7 @@ export default function ShoppingListScreen() {
                         e?.stopPropagation?.();
                         onEditItem(item);
                       }}
+                      accessibilityLabel={t(language, 'edit')}
                       hitSlop={6}
                       style={[styles.actionIcon, { borderRadius: borderRadius.sm }]}
                     >
@@ -703,6 +722,7 @@ export default function ShoppingListScreen() {
                         e?.stopPropagation?.();
                         onDeleteItem(item._id);
                       }}
+                      accessibilityLabel={t(language, 'delete')}
                       hitSlop={6}
                       style={[styles.actionIcon, { borderRadius: borderRadius.sm }]}
                     >

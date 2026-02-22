@@ -172,7 +172,7 @@ export default function MealPlanReviewScreen() {
         </Button>
       )}
       {isSignedIn && !entitlements.canUseAi ? (
-        <ThemedText style={{ color: colors.textMuted }}>{t(language, 'onlineEstimate')}</ThemedText>
+        <ThemedText style={{ color: colors.textMuted }}>{t(language, 'walmartEstimate')}</ThemedText>
       ) : null}
       {generating && <ActivityIndicator size="small" color={colors.primary} />}
       {error && <ThemedText style={{ color: colors.error }}>{error}</ThemedText>}
