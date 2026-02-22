@@ -38,8 +38,49 @@ type PlaidItemDoc = {
   ownerId: string;
   plaidItemId: string;
   accessToken: string;
+  status?: 'active' | 'disconnected';
 };
-type SyncResult = { status: 'ok' };
+
+export type SyncResult = {
+  status: 'ok' | 'partial' | 'error';
+  ownersProcessed: number;
+  itemsSynced: number;
+  itemsFailed: number;
+  message?: string;
+};
+
+export function summarizeSyncResult(args: {
+  ownersProcessed: number;
+  itemsSynced: number;
+  itemsFailed: number;
+  message?: string;
+}): SyncResult {
+  if (args.itemsFailed === 0) {
+    return {
+      status: 'ok',
+      ownersProcessed: args.ownersProcessed,
+      itemsSynced: args.itemsSynced,
+      itemsFailed: args.itemsFailed,
+      message: args.message,
+    };
+  }
+  if (args.itemsSynced === 0) {
+    return {
+      status: 'error',
+      ownersProcessed: args.ownersProcessed,
+      itemsSynced: args.itemsSynced,
+      itemsFailed: args.itemsFailed,
+      message: args.message,
+    };
+  }
+  return {
+    status: 'partial',
+    ownersProcessed: args.ownersProcessed,
+    itemsSynced: args.itemsSynced,
+    itemsFailed: args.itemsFailed,
+    message: args.message,
+  };
+}
 
 export function formatPlaidErrorMessage(status: number, body: string) {
   try {
@@ -145,11 +186,12 @@ export const createLinkToken = action({
 
 export const syncNow = action({
   args: ownerArgs,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<SyncResult> => {
     await requireSignedIn(ctx);
-    await ctx.runAction(internal.plaid.syncTransactionsInternal, {
-      ownerType: args.ownerType,
-      ownerId: args.ownerId,
+    const owner = await resolveOwner(ctx, args);
+    return await ctx.runAction(internal.plaid.syncTransactionsInternal, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
     });
   },
 });
@@ -161,7 +203,12 @@ export const syncTransactions = action({
   },
   handler: async (ctx, args): Promise<SyncResult> => {
     await requireSignedIn(ctx);
-    return await ctx.runAction(internal.plaid.syncTransactionsInternal, args);
+    const owner = await resolveOwner(ctx, args);
+    return await ctx.runAction(internal.plaid.syncTransactionsInternal, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      plaidItemId: args.plaidItemId,
+    });
   },
 });
 
@@ -171,107 +218,145 @@ export const syncTransactionsInternal = internalAction({
     plaidItemId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<SyncResult> => {
+    const auth = await ctx.auth.getUserIdentity();
+    const owner = auth
+      ? await resolveOwner(ctx, args)
+      : ({ ownerType: args.ownerType, ownerId: args.ownerId } as Owner);
     const items = (await ctx.runQuery(internal.plaid.listItemsInternal, {
-      ownerType: args.ownerType,
-      ownerId: args.ownerId,
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
     })) as PlaidItemDoc[];
 
+    const activeItems = items.filter((item) => item.status !== 'disconnected');
     const targetItems = args.plaidItemId
-      ? items.filter((item) => item.plaidItemId === args.plaidItemId)
-      : items;
+      ? activeItems.filter((item) => item.plaidItemId === args.plaidItemId)
+      : activeItems;
 
-    for (const item of targetItems) {
-      const syncState = await ctx.runQuery(api.syncState.getByItem, {
-        ownerType: args.ownerType,
-        ownerId: args.ownerId,
-        plaidItemIdRef: item._id,
-      });
-
-      const isInitialSync = !syncState?.cursor;
-      let cursor = syncState?.cursor ?? undefined;
-      let hasMore = true;
-      const added: PlaidTransaction[] = [];
-      const modified: PlaidTransaction[] = [];
-      const removed: PlaidRemoved[] = [];
-
-      while (hasMore) {
-        const result = await plaidRequest<{
-          added: PlaidTransaction[];
-          modified: PlaidTransaction[];
-          removed: PlaidRemoved[];
-          next_cursor: string;
-          has_more: boolean;
-        }>('/transactions/sync', {
-          access_token: item.accessToken,
-          cursor,
-          options: {
-            include_personal_finance_category: true,
-          },
-        });
-
-        added.push(...result.added);
-        modified.push(...result.modified);
-        removed.push(...result.removed);
-        cursor = result.next_cursor;
-        hasMore = result.has_more;
-      }
-
-      const mapped = [...added, ...modified].map((tx) => ({
-        plaidTransactionId: tx.transaction_id,
-        plaidAccountId: tx.account_id,
-        date: tx.date,
-        authorizedDate: tx.authorized_date ?? undefined,
-        name: tx.name,
-        merchantName: tx.merchant_name ?? undefined,
-        amount: tx.amount,
-        currency: tx.iso_currency_code ?? 'USD',
-        pending: Boolean(tx.pending),
-        mcc: tx.mcc ? String(tx.mcc) : undefined,
-        personalFinanceCategoryPrimary: tx.personal_finance_category?.primary ?? undefined,
-        personalFinanceCategoryDetailed: tx.personal_finance_category?.detailed ?? undefined,
-      }));
-
-      const filtered = isInitialSync
-        ? (() => {
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - 30);
-            const cutoffStr = cutoff.toISOString().slice(0, 10);
-            return mapped.filter((tx) => tx.date >= cutoffStr);
-          })()
-        : mapped;
-
-      if (filtered.length) {
-        await ctx.runMutation(internal.transactionsSync.upsertFromPlaidSyncInternal, {
-          ownerType: args.ownerType,
-          ownerId: args.ownerId,
-          transactions: filtered,
-        });
-      }
-
-      if (removed.length) {
-        await ctx.runMutation(internal.transactionsSync.removeByPlaidIdsInternal, {
-          ownerType: args.ownerType,
-          ownerId: args.ownerId,
-          plaidTransactionIds: removed.map((r) => r.transaction_id),
-        });
-      }
-
-      await ctx.runMutation(api.syncState.upsertInternal, {
-        ownerType: args.ownerType,
-        ownerId: args.ownerId,
-        plaidItemIdRef: item._id,
-        cursor,
-        lastSyncAt: Date.now(),
-        lastSyncStatus: 'success',
+    if (!targetItems.length) {
+      return summarizeSyncResult({
+        ownersProcessed: 1,
+        itemsSynced: 0,
+        itemsFailed: 0,
+        message: 'No active bank items to sync.',
       });
     }
 
-    await ctx.runMutation(internal.netWorth.captureSnapshotInternal, {
-      ownerType: args.ownerType,
-      ownerId: args.ownerId,
-    });
+    let itemsSynced = 0;
+    let itemsFailed = 0;
 
-    return { status: 'ok' };
+    for (const item of targetItems) {
+      try {
+        const syncState = await ctx.runQuery(internal.syncState.getByItemInternal, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          plaidItemIdRef: item._id,
+        });
+
+        const isInitialSync = !syncState?.cursor;
+        let cursor = syncState?.cursor ?? undefined;
+        let hasMore = true;
+        const added: PlaidTransaction[] = [];
+        const modified: PlaidTransaction[] = [];
+        const removed: PlaidRemoved[] = [];
+
+        while (hasMore) {
+          const result = await plaidRequest<{
+            added: PlaidTransaction[];
+            modified: PlaidTransaction[];
+            removed: PlaidRemoved[];
+            next_cursor: string;
+            has_more: boolean;
+          }>('/transactions/sync', {
+            access_token: item.accessToken,
+            cursor,
+            options: {
+              include_personal_finance_category: true,
+            },
+          });
+
+          added.push(...result.added);
+          modified.push(...result.modified);
+          removed.push(...result.removed);
+          cursor = result.next_cursor;
+          hasMore = result.has_more;
+        }
+
+        const mapped = [...added, ...modified].map((tx) => ({
+          plaidTransactionId: tx.transaction_id,
+          plaidAccountId: tx.account_id,
+          date: tx.date,
+          authorizedDate: tx.authorized_date ?? undefined,
+          name: tx.name,
+          merchantName: tx.merchant_name ?? undefined,
+          amount: tx.amount,
+          currency: tx.iso_currency_code ?? 'USD',
+          pending: Boolean(tx.pending),
+          mcc: tx.mcc ? String(tx.mcc) : undefined,
+          personalFinanceCategoryPrimary: tx.personal_finance_category?.primary ?? undefined,
+          personalFinanceCategoryDetailed: tx.personal_finance_category?.detailed ?? undefined,
+        }));
+
+        const filtered = isInitialSync
+          ? (() => {
+              const cutoff = new Date();
+              cutoff.setDate(cutoff.getDate() - 30);
+              const cutoffStr = cutoff.toISOString().slice(0, 10);
+              return mapped.filter((tx) => tx.date >= cutoffStr);
+            })()
+          : mapped;
+
+        if (filtered.length) {
+          await ctx.runMutation(internal.transactionsSync.upsertFromPlaidSyncInternal, {
+            ownerType: owner.ownerType,
+            ownerId: owner.ownerId,
+            transactions: filtered,
+          });
+        }
+
+        if (removed.length) {
+          await ctx.runMutation(internal.transactionsSync.removeByPlaidIdsInternal, {
+            ownerType: owner.ownerType,
+            ownerId: owner.ownerId,
+            plaidTransactionIds: removed.map((r) => r.transaction_id),
+          });
+        }
+
+        await ctx.runMutation(internal.syncState.upsertForSyncInternal, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          plaidItemIdRef: item._id,
+          cursor,
+          lastSyncAt: Date.now(),
+          lastSyncStatus: 'success',
+          lastSyncError: '',
+        });
+        itemsSynced += 1;
+      } catch (error: any) {
+        itemsFailed += 1;
+        await ctx.runMutation(internal.syncState.upsertForSyncInternal, {
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          plaidItemIdRef: item._id,
+          lastSyncAt: Date.now(),
+          lastSyncStatus: 'error',
+          lastSyncError: error?.message ?? 'Unknown sync error.',
+        });
+      }
+    }
+
+    if (itemsSynced > 0) {
+      await ctx.runMutation(internal.netWorth.captureSnapshotInternal, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+      });
+    }
+
+    return summarizeSyncResult({
+      ownersProcessed: 1,
+      itemsSynced,
+      itemsFailed,
+      message: itemsFailed > 0 ? 'Some bank items failed to sync.' : undefined,
+    });
   },
 });
 
@@ -342,7 +427,7 @@ export const exchangePublicToken = action({
       })),
     });
 
-    await ctx.runMutation(api.syncState.upsertInternal, {
+    await ctx.runMutation(internal.syncState.upsertForSyncInternal, {
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
       plaidItemIdRef: itemId,
@@ -354,6 +439,41 @@ export const exchangePublicToken = action({
       ownerType: owner.ownerType,
       ownerId: owner.ownerId,
       plaidItemId: exchange.item_id,
+    });
+  },
+});
+
+export const pollAllOwnersInternal = internalAction({
+  args: {},
+  handler: async (ctx): Promise<SyncResult> => {
+    const owners = await ctx.runQuery(internal.plaid.listActiveOwnersInternal, {});
+    if (!owners.length) {
+      return summarizeSyncResult({
+        ownersProcessed: 0,
+        itemsSynced: 0,
+        itemsFailed: 0,
+        message: 'No active Plaid owners to poll.',
+      });
+    }
+
+    let ownersProcessed = 0;
+    let itemsSynced = 0;
+    let itemsFailed = 0;
+    for (const owner of owners) {
+      const result = await ctx.runAction(internal.plaid.syncTransactionsInternal, {
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+      });
+      ownersProcessed += 1;
+      itemsSynced += result.itemsSynced;
+      itemsFailed += result.itemsFailed;
+    }
+
+    return summarizeSyncResult({
+      ownersProcessed,
+      itemsSynced,
+      itemsFailed,
+      message: itemsFailed > 0 ? 'Polling completed with some sync failures.' : undefined,
     });
   },
 });
@@ -544,5 +664,22 @@ export const getItemByPlaidIdInternal = internalQuery({
       .query('plaidItems')
       .withIndex('by_plaidItemId', (q) => q.eq('plaidItemId', args.plaidItemId))
       .first();
+  },
+});
+
+export const listActiveOwnersInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const items = (await ctx.db.query('plaidItems').collect()) as PlaidItemDoc[];
+    const seen = new Set<string>();
+    const owners: Array<{ ownerType: Owner['ownerType']; ownerId: string }> = [];
+    for (const item of items) {
+      if (item.status === 'disconnected') continue;
+      const key = `${item.ownerType}:${item.ownerId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      owners.push({ ownerType: item.ownerType, ownerId: item.ownerId });
+    }
+    return owners;
   },
 });

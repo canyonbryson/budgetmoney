@@ -123,6 +123,11 @@ export default function DashboardScreen() {
   const { owner, entitlements, isReady, isSignedIn } = useIdentity();
   const { colors, spacing, borderRadius, shadows, typography } = useAppTheme();
   const [uploading, setUploading] = React.useState(false);
+  const [syncing, setSyncing] = React.useState(false);
+  const [syncStatus, setSyncStatus] = React.useState<{
+    tone: 'success' | 'partial' | 'failed';
+    text: string;
+  } | null>(null);
   const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(new Set());
 
   const toggleGroup = (id: string) => {
@@ -199,7 +204,22 @@ export default function DashboardScreen() {
 
   const onSync = async () => {
     if (!owner || !isSignedIn) return;
-    await syncNow({ ownerType: owner.ownerType, ownerId: owner.ownerId });
+    setSyncing(true);
+    setSyncStatus(null);
+    try {
+      const result = await syncNow({ ownerType: owner.ownerType, ownerId: owner.ownerId });
+      if (result?.status === 'ok') {
+        setSyncStatus({ tone: 'success', text: 'Sync complete.' });
+      } else if (result?.status === 'partial') {
+        setSyncStatus({ tone: 'partial', text: 'Sync completed with some failures.' });
+      } else {
+        setSyncStatus({ tone: 'failed', text: result?.message ?? 'Sync failed.' });
+      }
+    } catch (err: any) {
+      setSyncStatus({ tone: 'failed', text: err?.message ?? 'Sync failed.' });
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const onScanReceipt = async () => {
@@ -395,10 +415,10 @@ export default function DashboardScreen() {
           <Button
             variant="secondary"
             onPress={onSync}
-            disabled={!entitlements.canUsePlaid}
+            disabled={!entitlements.canUsePlaid || syncing}
             style={{ flex: 1, minWidth: 0 }}
           >
-            {`${t(language, 'syncNow')}`}
+            {syncing ? 'Syncing...' : `${t(language, 'syncNow')}`}
           </Button>
           <Button
             variant="accent"
@@ -409,6 +429,23 @@ export default function DashboardScreen() {
             {`${t(language, 'scanReceipt')}`}
           </Button>
         </View>
+        {syncStatus ? (
+          <ThemedText
+            style={[
+              typography.caption,
+              {
+                color:
+                  syncStatus.tone === 'success'
+                    ? colors.success
+                    : syncStatus.tone === 'partial'
+                      ? colors.warning
+                      : colors.error,
+              },
+            ]}
+          >
+            {syncStatus.text}
+          </ThemedText>
+        ) : null}
       </View>
 
       {/* ─── Alerts ─── */}

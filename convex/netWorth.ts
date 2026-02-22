@@ -288,7 +288,7 @@ export const getProjection = query({
 export const captureSnapshotInternal = internalMutation({
   args: ownerArgs,
   handler: async (ctx, args) => {
-    const owner = await resolveOwner(ctx, args);
+    const owner = { ownerType: args.ownerType, ownerId: args.ownerId };
     const accounts = await ctx.db
       .query('plaidAccounts')
       .withIndex('by_owner', (q) => q.eq('ownerType', owner.ownerType).eq('ownerId', owner.ownerId))

@@ -235,11 +235,6 @@ export const acceptInviteByToken = mutation({
       throw new Error('Family mode is disabled.');
     }
     const auth = await requireSignedIn(ctx);
-    const existing = await getActiveMembership(ctx, auth.subject);
-    if (existing) {
-      throw new Error('You are already in a family.');
-    }
-
     const now = Date.now();
     const tokenHash = await hashToken(args.token.trim());
     const invite = await ctx.db
@@ -249,6 +244,23 @@ export const acceptInviteByToken = mutation({
     if (!invite) {
       throw new Error('Invite not found.');
     }
+    const existing = await getActiveMembership(ctx, auth.subject);
+    const inviteFamilyId = String(invite.familyId);
+    const existingFamilyId = existing ? String(existing.familyId) : null;
+    let transfer: 'none' | 'fromSoloFamily' = 'none';
+
+    if (existing && existingFamilyId === inviteFamilyId) {
+      if (invite.status === 'pending') {
+        await ctx.db.patch(invite._id, {
+          status: 'accepted',
+          acceptedByUserId: auth.subject,
+          acceptedAt: now,
+          updatedAt: now,
+        });
+      }
+      return { familyId: inviteFamilyId, transfer };
+    }
+
     if (invite.status !== 'pending') {
       throw new Error('Invite is no longer active.');
     }
@@ -260,29 +272,73 @@ export const acceptInviteByToken = mutation({
       throw new Error('Invite has expired.');
     }
 
+    if (existing && existingFamilyId !== inviteFamilyId) {
+      const currentFamilyMembers = await ctx.db
+        .query('familyMembers')
+        .withIndex('by_family_status', (q: any) =>
+          q.eq('familyId', existing.familyId).eq('status', 'active')
+        )
+        .collect();
+      const hasOtherActiveMembers = currentFamilyMembers.some(
+        (member: any) => member.userId !== auth.subject
+      );
+      if (hasOtherActiveMembers) {
+        throw new Error(
+          'Cannot transfer because your current family has other active members. Leave that family first.'
+        );
+      }
+
+      await migrateOwnerData(
+        ctx,
+        { ownerType: 'family', ownerId: String(existing.familyId) },
+        { ownerType: 'family', ownerId: inviteFamilyId }
+      );
+      await ctx.db.patch(existing._id, {
+        status: 'removed',
+        updatedAt: now,
+      });
+      transfer = 'fromSoloFamily';
+    }
+
     await migrateOwnerData(
       ctx,
       { ownerType: 'user', ownerId: auth.subject },
-      { ownerType: 'family', ownerId: String(invite.familyId) }
+      { ownerType: 'family', ownerId: inviteFamilyId }
     );
 
-    await ctx.db.insert('familyMembers', {
-      familyId: invite.familyId,
-      userId: auth.subject,
-      role: 'member',
-      status: 'active',
-      invitedByUserId: invite.invitedByUserId,
-      joinedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
+    const existingTargetMembership = await ctx.db
+      .query('familyMembers')
+      .withIndex('by_family_user', (q: any) =>
+        q.eq('familyId', invite.familyId).eq('userId', auth.subject)
+      )
+      .first();
+    if (existingTargetMembership) {
+      await ctx.db.patch(existingTargetMembership._id, {
+        role: existingTargetMembership.role ?? 'member',
+        status: 'active',
+        invitedByUserId: invite.invitedByUserId ?? existingTargetMembership.invitedByUserId,
+        joinedAt: existingTargetMembership.joinedAt ?? now,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert('familyMembers', {
+        familyId: invite.familyId,
+        userId: auth.subject,
+        role: 'member',
+        status: 'active',
+        invitedByUserId: invite.invitedByUserId,
+        joinedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
     await ctx.db.patch(invite._id, {
       status: 'accepted',
       acceptedByUserId: auth.subject,
       acceptedAt: now,
       updatedAt: now,
     });
-    return { familyId: String(invite.familyId) };
+    return { familyId: inviteFamilyId, transfer };
   },
 });
 

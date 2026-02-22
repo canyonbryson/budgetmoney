@@ -20,6 +20,7 @@ import type * as budgets from "../budgets.js";
 import type * as categories from "../categories.js";
 import type * as categorize from "../categorize.js";
 import type * as categoryKinds from "../categoryKinds.js";
+import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as data from "../data.js";
 import type * as devices from "../devices.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   categories: typeof categories;
   categorize: typeof categorize;
   categoryKinds: typeof categoryKinds;
+  crons: typeof crons;
   dashboard: typeof dashboard;
   data: typeof data;
   devices: typeof devices;
