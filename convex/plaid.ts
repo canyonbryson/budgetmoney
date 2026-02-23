@@ -123,6 +123,8 @@ async function plaidRequest<T>(path: string, body: Record<string, unknown>): Pro
   });
   if (!response.ok) {
     const text = await response.text();
+    console.log('text', text);
+    console.log(clientId, secret);
     throw new Error(formatPlaidErrorMessage(response.status, text));
   }
   return (await response.json()) as T;
@@ -341,6 +343,7 @@ export const syncTransactionsInternal = internalAction({
           lastSyncStatus: 'error',
           lastSyncError: error?.message ?? 'Unknown sync error.',
         });
+        console.log('error', error);
       }
     }
 
@@ -350,6 +353,9 @@ export const syncTransactionsInternal = internalAction({
         ownerId: owner.ownerId,
       });
     }
+
+    console.log('itemsSynced', itemsSynced);
+    console.log('itemsFailed', itemsFailed);
 
     return summarizeSyncResult({
       ownersProcessed: 1,
